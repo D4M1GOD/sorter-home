@@ -1,5 +1,4 @@
 import {
-  ChangeDetectionStrategy,
   Component,
   computed,
   ElementRef,
@@ -27,7 +26,6 @@ interface ActiveDrag {
   selector: 'app-room-plan',
   templateUrl: './room-plan.html',
   styleUrl: './room-plan.scss',
-  changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class RoomPlan {
   readonly room = input.required<Room>();
