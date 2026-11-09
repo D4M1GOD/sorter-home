@@ -1,0 +1,30 @@
+@if (room(); as room) {
+  <h1>{{ room.name }}</h1>
+
+  <form (submit)="onRename($event)" novalidate>
+    <label for="rename-room">Rename room</label>
+    <input
+      id="rename-room"
+      type="text"
+      autocomplete="off"
+      [formField]="renameForm.name"
+      [attr.aria-invalid]="renameForm.name().touched() && renameForm.name().invalid()"
+      aria-describedby="rename-room-status"
+    />
+    <button class="button" type="submit">Rename</button>
+    <div id="rename-room-status" role="alert">
+      @if (renameForm.name().touched() && renameForm.name().invalid()) {
+        @for (error of renameForm.name().errors(); track error.kind) {
+          <p class="field-error">{{ error.message }}</p>
+        }
+      } @else if (saved()) {
+        <p>Name saved.</p>
+      }
+    </div>
+  </form>
+
+  <app-room-plan [room]="room" />
+} @else {
+  <h1>Room not found</h1>
+  <p>This room does not exist. <a routerLink="/rooms">Back to rooms</a></p>
+}

@@ -1,1 +1,71 @@
-/* You can add global styles to this file, and also import other style files */
+/* Global styles shared by all pages. Component-specific styles stay in each component's own file. */
+main label {
+  display: block;
+  margin-bottom: 0.25rem;
+}
+
+main input[type='text'] {
+  padding: 0.5rem;
+  font: inherit;
+  margin-right: 0.5rem;
+}
+
+.button {
+  display: inline-block;
+  padding: 0.5rem 1rem;
+  border: 1px solid #1f2937;
+  border-radius: 0.25rem;
+  background: #fff;
+  color: #1f2937;
+  font: inherit;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.button--primary {
+  background: #1f4fbf;
+  border-color: #1f4fbf;
+  color: #fff;
+}
+
+.button--danger {
+  border-color: #9b1c1c;
+  color: #9b1c1c;
+}
+
+.actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.field-error {
+  color: #9b1c1c;
+}
+
+.room-list {
+  list-style: none;
+  padding: 0;
+}
+
+.room-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding: 0.75rem 0;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.room-size {
+  margin-left: 0.75rem;
+  color: #4b5563;
+}
+
+.confirm {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
