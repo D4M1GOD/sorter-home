@@ -1,5 +1,6 @@
 import { Service, signal } from '@angular/core';
 import {
+  clampRoomSize,
   isValidRoomName,
   Room,
   ROOM_MAX_SIZE_MM,
@@ -90,6 +91,24 @@ export class RoomStore {
     }
     this.update((rooms) =>
       rooms.map((room) => (room.id === id ? { ...room, name: name.trim() } : room)),
+    );
+    return true;
+  }
+
+  /**
+   * Changes the size of a room. Lengths are rounded and kept between the minimum and maximum.
+   * Returns false if the room does not exist.
+   */
+  resize(id: string, widthMm: number, depthMm: number): boolean {
+    if (!this.getById(id)) {
+      return false;
+    }
+    const width = clampRoomSize(widthMm);
+    const depth = clampRoomSize(depthMm);
+    this.update((rooms) =>
+      rooms.map((room) =>
+        room.id === id ? { ...room, widthMm: width, depthMm: depth } : room,
+      ),
     );
     return true;
   }

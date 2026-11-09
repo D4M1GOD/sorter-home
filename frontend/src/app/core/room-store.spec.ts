@@ -1,5 +1,5 @@
 import { vi } from 'vitest';
-import { createRoom } from './room.model';
+import { createRoom, ROOM_MAX_SIZE_MM, ROOM_MIN_SIZE_MM } from './room.model';
 import { ROOMS_STORAGE_KEY, RoomStore } from './room-store';
 
 describe('RoomStore', () => {
@@ -42,6 +42,39 @@ describe('RoomStore', () => {
     expect(store.rename(room.id, '   ')).toBe(false);
     expect(store.rename('nope', 'Attic')).toBe(false);
     expect(store.getById(room.id)?.name).toBe('Garage');
+  });
+
+  it('resizes a room', () => {
+    const store = new RoomStore();
+    const room = createRoom('Garage');
+    store.add(room);
+    expect(store.resize(room.id, 5000, 4000)).toBe(true);
+    expect(store.getById(room.id)).toEqual({ ...room, widthMm: 5000, depthMm: 4000 });
+  });
+
+  it('clamps the size when resizing', () => {
+    const store = new RoomStore();
+    const room = createRoom('Garage');
+    store.add(room);
+    expect(store.resize(room.id, 10, 999999)).toBe(true);
+    expect(store.getById(room.id)?.widthMm).toBe(ROOM_MIN_SIZE_MM);
+    expect(store.getById(room.id)?.depthMm).toBe(ROOM_MAX_SIZE_MM);
+  });
+
+  it('does not resize an unknown id', () => {
+    const store = new RoomStore();
+    const room = createRoom('Garage');
+    store.add(room);
+    expect(store.resize('nope', 5000, 4000)).toBe(false);
+    expect(store.getById(room.id)).toEqual(room);
+  });
+
+  it('keeps the new size when a new store instance is created', () => {
+    const first = new RoomStore();
+    const room = createRoom('Garage');
+    first.add(room);
+    first.resize(room.id, 5000, 4000);
+    expect(new RoomStore().getById(room.id)).toEqual({ ...room, widthMm: 5000, depthMm: 4000 });
   });
 
   it('removes a room', () => {
