@@ -1,4 +1,4 @@
-# SorterHome — Requirements (v0.4)
+# SorterHome — Requirements (v0.5)
 
 Last updated: 2026-11-08
 Status: Requirements for v1 are agreed. Items marked **Open** still need a decision from the project owner.
@@ -97,10 +97,13 @@ A web app to organize storage containers at home and know exactly what is inside
 | Photos | Azure Blob Storage | Proposed |
 | Hosting | Azure | Proposed |
 | Code and CI | GitHub + GitHub Actions | Proposed |
-| Drawing the room plan | SVG, HTML canvas or a library | To decide in phase 1 |
+| Drawing the room plan | **SVG** inside Angular templates, with pointer events written by hand (no drawing library) | Confirmed |
 
-## 11. Roadmap (simple → complex)
-0. Setup: tools, GitHub repository, Claude project, CLAUDE.md
+## 11. Rendering decision
+The room plan is drawn with SVG. Reasons: the plan has tens of objects (not thousands), SVG elements bind directly to Angular data, and the SVG `viewBox` can use **millimeters**, the same unit as the stored data. Drag, resize, snap and rotate are implemented with pointer events. Data and drawing stay separate (a plain model in mm; SVG components only render it), so a library could replace the drawing layer later without changing the model.
+
+## 12. Roadmap (simple → complex)
+0. Setup: tools, GitHub repository, Claude project, CLAUDE.md — **done**. The Angular frontend is scaffolded (SCSS, routing, no SSR).
 1. Rooms as resizable floor plans with a 1 ft grid
 2. Containers on the plan: drag with snap, rotate, stack order
 3. Items: name, quantity, category, photo
