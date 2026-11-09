@@ -1,0 +1,21 @@
+<h1>Create Room</h1>
+
+<form (submit)="onSubmit($event)" novalidate>
+  <label for="room-name">Room name</label>
+  <input
+    id="room-name"
+    type="text"
+    autocomplete="off"
+    [formField]="roomForm.name"
+    [attr.aria-invalid]="roomForm.name().touched() && roomForm.name().invalid()"
+    aria-describedby="room-name-error"
+  />
+  <div id="room-name-error" role="alert">
+    @if (roomForm.name().touched() && roomForm.name().invalid()) {
+      @for (error of roomForm.name().errors(); track error.kind) {
+        <p class="field-error">{{ error.message }}</p>
+      }
+    }
+  </div>
+  <button class="button button--primary" type="submit">Create</button>
+</form>
