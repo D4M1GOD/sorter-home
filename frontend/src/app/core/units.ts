@@ -17,6 +17,11 @@ export function mmToInches(mm: number): number {
   return mm / MM_PER_INCH;
 }
 
+/** Snaps a length to the nearest whole inch and returns it as whole millimeters. */
+export function snapToInchMm(mm: number): number {
+  return inchesToMm(Math.round(mmToInches(mm)));
+}
+
 /** Formats millimeters for display, rounded to the nearest inch. Example: 3658 -> "12 ft 0 in". */
 export function formatFeetInches(mm: number): string {
   const totalInches = Math.round(mmToInches(mm));

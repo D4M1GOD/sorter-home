@@ -1,4 +1,4 @@
-# SorterHome — Requirements (v0.6)
+# SorterHome — Requirements (v0.7)
 
 Last updated: 2026-11-08
 Status: Requirements for v1 are agreed. Items marked **Open** still need a decision from the project owner.
@@ -104,9 +104,23 @@ A web app to organize storage containers at home and know exactly what is inside
 ## 11. Rendering decision
 The room plan is drawn with SVG. Reasons: the plan has tens of objects (not thousands), SVG elements bind directly to Angular data, and the SVG `viewBox` can use **millimeters**, the same unit as the stored data. Drag, resize, snap and rotate are implemented with pointer events. Data and drawing stay separate (a plain model in mm; SVG components only render it), so a library could replace the drawing layer later without changing the model.
 
-## 12. Roadmap (simple → complex)
+## 12. Pages, routes and temporary storage (phase 1)
+| Route | Page |
+|---|---|
+| `/` | Home: "Create Room" and "Explore Rooms" |
+| `/rooms/new` | Create Room: name form. On success, goes straight to the new room's plan page |
+| `/rooms` | List of rooms: name, size, Open, Delete (with inline confirmation) |
+| `/rooms/:id` | Room plan page: where all room editing lives (rename now; resize, containers and items in later steps) |
+| anything else | Redirects to `/` |
+
+- `/rooms/new` is declared before `/rooms/:id`, otherwise "new" would be read as a room id.
+- **Temporary storage:** rooms are kept in the browser's localStorage (key `sorterhome.rooms.v1`) through `RoomStore`. Stored data is validated on load and invalid entries are discarded. This storage is per browser: it is not shared across devices or people.
+- **Replacing it later:** when the backend exists, `RoomStore` is replaced by calls to the API. The routes stay the same. The pages will need loading and error states because network calls are asynchronous.
+- **Frontend conventions (Angular 22):** Signal Forms, the `@Service` decorator, lazy-loaded routes, Vitest for tests. Pages live in `src/app/pages/`, shared logic in `src/app/core/`.
+
+## 13. Roadmap (simple → complex)
 0. Setup: tools, GitHub repository, Claude project, CLAUDE.md — **done**. The Angular frontend is scaffolded (SCSS, routing, no SSR).
-1. Rooms as resizable floor plans with a 1 ft grid
+1. Rooms as resizable floor plans with a 1 ft grid — **in progress**: plan drawing, pages and local storage are done; resizing by dragging is next
 2. Containers on the plan: drag with snap, rotate, stack order
 3. Items: name, quantity, category, photo
 4. Search and filters

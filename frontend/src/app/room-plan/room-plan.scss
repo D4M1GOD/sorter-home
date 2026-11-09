@@ -28,6 +28,43 @@
   vector-effect: non-scaling-stroke;
 }
 
+// Invisible touch zone: 44 px wide on screen at any room size or zoom.
+.hit {
+  stroke: transparent;
+  stroke-width: 44;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+  pointer-events: stroke;
+  touch-action: none;
+}
+
+.hit-right {
+  cursor: ew-resize;
+}
+
+.hit-bottom {
+  cursor: ns-resize;
+}
+
+.hit-corner {
+  cursor: nwse-resize;
+}
+
+// Visible handle: a 14 px round dot on screen at any room size.
+.dot {
+  stroke: #2563eb;
+  stroke-width: 14;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
+}
+
+.size-text {
+  margin: 0.5rem 0 0;
+  color: #374151;
+  font-family: system-ui, sans-serif;
+}
+
 .label {
   fill: #374151;
   font-family: system-ui, sans-serif;
