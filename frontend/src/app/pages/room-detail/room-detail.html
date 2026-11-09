@@ -23,7 +23,7 @@
     </div>
   </form>
 
-  <app-room-plan [room]="room" />
+  <app-room-plan [room]="room" (resized)="onResize($event)" />
 } @else {
   <h1>Room not found</h1>
   <p>This room does not exist. <a routerLink="/rooms">Back to rooms</a></p>

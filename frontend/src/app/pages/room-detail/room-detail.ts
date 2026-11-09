@@ -4,6 +4,7 @@ import { apply, form, FormField, submit } from '@angular/forms/signals';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { map } from 'rxjs';
 import { roomNameSchema } from '../../core/room-name-schema';
+import { RoomSize } from '../../core/room-resize';
 import { RoomStore } from '../../core/room-store';
 import { RoomPlan } from '../../room-plan/room-plan';
 
@@ -31,6 +32,14 @@ export class RoomDetail {
   protected readonly renameForm = form(this.model, (path) => {
     apply(path.name, roomNameSchema);
   });
+
+  /** Saves the final size when the user releases a resize handle on the plan. */
+  protected onResize(size: RoomSize): void {
+    const room = this.room();
+    if (room) {
+      this.store.resize(room.id, size.widthMm, size.depthMm);
+    }
+  }
 
   protected onRename(event: Event): void {
     event.preventDefault();

@@ -1,8 +1,10 @@
 import { TestBed } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
 import { provideRouter } from '@angular/router';
 import { RouterTestingHarness } from '@angular/router/testing';
 import { RoomStore } from '../../core/room-store';
 import { createRoom } from '../../core/room.model';
+import { RoomPlan } from '../../room-plan/room-plan';
 import { routes } from '../../app.routes';
 
 describe('RoomDetail', () => {
@@ -54,6 +56,20 @@ describe('RoomDetail', () => {
     expect(element.querySelector('.field-error')?.textContent).toContain('required');
     expect(store.getById(room.id)?.name).toBe('Garage');
     expect(element.textContent).not.toContain('Name saved.');
+  });
+
+  it('saves the new size when the plan emits a resize', async () => {
+    const store = TestBed.inject(RoomStore);
+    const room = createRoom('Garage');
+    store.add(room);
+    const { fixture, element } = await open(room.id);
+
+    const plan = fixture.debugElement.query(By.directive(RoomPlan)).componentInstance as RoomPlan;
+    plan.resized.emit({ widthMm: 5000, depthMm: 4000 });
+    await fixture.whenStable();
+
+    expect(store.getById(room.id)).toEqual({ ...room, widthMm: 5000, depthMm: 4000 });
+    expect(element.querySelector('.size-text')?.textContent).toContain('16 ft 5 in × 13 ft 1 in');
   });
 
   it('shows "Room not found" for an unknown id', async () => {

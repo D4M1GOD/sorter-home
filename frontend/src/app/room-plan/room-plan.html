@@ -1,26 +1,27 @@
 <svg
+  #plan
   class="plan"
   [attr.viewBox]="viewBox()"
   role="img"
   [attr.aria-label]="'Plan of ' + room().name + ', ' + widthLabel() + ' by ' + depthLabel()"
 >
-  <rect class="floor" x="0" y="0" [attr.width]="room().widthMm" [attr.height]="room().depthMm" />
+  <rect class="floor" x="0" y="0" [attr.width]="shownSize().widthMm" [attr.height]="shownSize().depthMm" />
 
   @for (x of verticalLines(); track x) {
-    <line class="grid-line" [attr.x1]="x" y1="0" [attr.x2]="x" [attr.y2]="room().depthMm" />
+    <line class="grid-line" [attr.x1]="x" y1="0" [attr.x2]="x" [attr.y2]="shownSize().depthMm" />
   }
   @for (y of horizontalLines(); track y) {
-    <line class="grid-line" x1="0" [attr.y1]="y" [attr.x2]="room().widthMm" [attr.y2]="y" />
+    <line class="grid-line" x1="0" [attr.y1]="y" [attr.x2]="shownSize().widthMm" [attr.y2]="y" />
   }
 
-  <rect class="wall" x="0" y="0" [attr.width]="room().widthMm" [attr.height]="room().depthMm" />
+  <rect class="wall" x="0" y="0" [attr.width]="shownSize().widthMm" [attr.height]="shownSize().depthMm" />
 
   <text
     class="label"
     text-anchor="middle"
     [attr.font-size]="labelSize()"
-    [attr.x]="room().widthMm / 2"
-    [attr.y]="room().depthMm + margin() * 0.7"
+    [attr.x]="shownSize().widthMm / 2"
+    [attr.y]="shownSize().depthMm + margin() * 0.7"
   >{{ widthLabel() }}</text>
   <text
     class="label"
@@ -30,4 +31,68 @@
     [attr.y]="depthLabelPos().y"
     [attr.transform]="'rotate(-90 ' + depthLabelPos().x + ' ' + depthLabelPos().y + ')'"
   >{{ depthLabel() }}</text>
+
+  <!--
+    Resize handles. The stroke width of these lines is in screen pixels (non-scaling-stroke),
+    so the touch zone is the same size on screen for any room size. The "dot" lines are only
+    1 mm long: with round caps they are drawn as a round dot.
+  -->
+  <line
+    class="hit hit-right"
+    [attr.x1]="shownSize().widthMm"
+    y1="0"
+    [attr.x2]="shownSize().widthMm"
+    [attr.y2]="shownSize().depthMm"
+    (pointerdown)="onPointerDown('right', $event)"
+    (pointermove)="onPointerMove($event)"
+    (pointerup)="onPointerUp($event)"
+    (pointercancel)="onPointerCancel($event)"
+    (lostpointercapture)="onPointerCancel($event)"
+  />
+  <line
+    class="hit hit-bottom"
+    x1="0"
+    [attr.y1]="shownSize().depthMm"
+    [attr.x2]="shownSize().widthMm"
+    [attr.y2]="shownSize().depthMm"
+    (pointerdown)="onPointerDown('bottom', $event)"
+    (pointermove)="onPointerMove($event)"
+    (pointerup)="onPointerUp($event)"
+    (pointercancel)="onPointerCancel($event)"
+    (lostpointercapture)="onPointerCancel($event)"
+  />
+  <line
+    class="hit hit-corner"
+    [attr.x1]="shownSize().widthMm"
+    [attr.y1]="shownSize().depthMm"
+    [attr.x2]="shownSize().widthMm + 1"
+    [attr.y2]="shownSize().depthMm"
+    (pointerdown)="onPointerDown('corner', $event)"
+    (pointermove)="onPointerMove($event)"
+    (pointerup)="onPointerUp($event)"
+    (pointercancel)="onPointerCancel($event)"
+    (lostpointercapture)="onPointerCancel($event)"
+  />
+  <line
+    class="dot"
+    [attr.x1]="shownSize().widthMm"
+    [attr.y1]="shownSize().depthMm / 2"
+    [attr.x2]="shownSize().widthMm + 1"
+    [attr.y2]="shownSize().depthMm / 2"
+  />
+  <line
+    class="dot"
+    [attr.x1]="shownSize().widthMm / 2"
+    [attr.y1]="shownSize().depthMm"
+    [attr.x2]="shownSize().widthMm / 2 + 1"
+    [attr.y2]="shownSize().depthMm"
+  />
+  <line
+    class="dot"
+    [attr.x1]="shownSize().widthMm"
+    [attr.y1]="shownSize().depthMm"
+    [attr.x2]="shownSize().widthMm + 1"
+    [attr.y2]="shownSize().depthMm"
+  />
 </svg>
+<p class="size-text">Size: {{ widthLabel() }} × {{ depthLabel() }}</p>
