@@ -1,0 +1,33 @@
+<svg
+  class="plan"
+  [attr.viewBox]="viewBox()"
+  role="img"
+  [attr.aria-label]="'Plan of ' + room().name + ', ' + widthLabel() + ' by ' + depthLabel()"
+>
+  <rect class="floor" x="0" y="0" [attr.width]="room().widthMm" [attr.height]="room().depthMm" />
+
+  @for (x of verticalLines(); track x) {
+    <line class="grid-line" [attr.x1]="x" y1="0" [attr.x2]="x" [attr.y2]="room().depthMm" />
+  }
+  @for (y of horizontalLines(); track y) {
+    <line class="grid-line" x1="0" [attr.y1]="y" [attr.x2]="room().widthMm" [attr.y2]="y" />
+  }
+
+  <rect class="wall" x="0" y="0" [attr.width]="room().widthMm" [attr.height]="room().depthMm" />
+
+  <text
+    class="label"
+    text-anchor="middle"
+    [attr.font-size]="labelSize()"
+    [attr.x]="room().widthMm / 2"
+    [attr.y]="room().depthMm + margin() * 0.7"
+  >{{ widthLabel() }}</text>
+  <text
+    class="label"
+    text-anchor="middle"
+    [attr.font-size]="labelSize()"
+    [attr.x]="depthLabelPos().x"
+    [attr.y]="depthLabelPos().y"
+    [attr.transform]="'rotate(-90 ' + depthLabelPos().x + ' ' + depthLabelPos().y + ')'"
+  >{{ depthLabel() }}</text>
+</svg>

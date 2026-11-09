@@ -1,0 +1,35 @@
+:host {
+  display: block;
+}
+
+.plan {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: 80vh;
+}
+
+.floor {
+  fill: #f4f6f8;
+}
+
+// Semi-transparent grid. non-scaling-stroke keeps the line 1 px thick at any zoom.
+.grid-line {
+  stroke: #1f2937;
+  stroke-opacity: 0.18;
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+.wall {
+  fill: none;
+  stroke: #1f2937;
+  stroke-width: 3;
+  vector-effect: non-scaling-stroke;
+}
+
+.label {
+  fill: #374151;
+  font-family: system-ui, sans-serif;
+  dominant-baseline: middle;
+}

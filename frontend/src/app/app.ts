@@ -1,12 +1,14 @@
-import { Component, signal } from '@angular/core';
-import { RouterOutlet } from '@angular/router';
+import { Component } from '@angular/core';
+import { createRoom } from './core/room.model';
+import { RoomPlan } from './room-plan/room-plan';
 
 @Component({
-  imports: [RouterOutlet],
   selector: 'app-root',
-  styleUrl: './app.scss',
+  imports: [RoomPlan],
   templateUrl: './app.html',
+  styleUrl: './app.scss',
 })
 export class App {
-  protected readonly title = signal('frontend');
+  // Temporary: a hard-coded room until rooms are created from the UI.
+  protected readonly room = createRoom('Garage');
 }
