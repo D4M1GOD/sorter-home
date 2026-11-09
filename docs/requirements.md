@@ -1,4 +1,4 @@
-# SorterHome — Requirements (v0.7)
+# SorterHome — Requirements (v0.8)
 
 Last updated: 2026-11-08
 Status: Requirements for v1 are agreed. Items marked **Open** still need a decision from the project owner.
@@ -42,7 +42,7 @@ A web app to organize storage containers at home and know exactly what is inside
 ### Rooms and plan
 - FR-1: Create, rename and delete rooms. The room name is required, at most 60 characters, and two rooms may have the same name.
 - FR-1b: A new room starts at **12 ft × 10 ft** (3658 × 3048 mm). Minimum size **4 ft × 4 ft** (1219 × 1219 mm). Maximum size **100 ft × 100 ft** (30480 × 30480 mm).
-- FR-2: Resize a room by dragging its edges or corners. The room shows its real size (for example 12 ft × 10 ft). An edge cannot be dragged past the containers inside the room.
+- FR-2: Resize a room by dragging its right edge, its bottom edge or its bottom-right corner (the top-left corner stays fixed). The size changes in 1 in steps, stays between 4 ft and 100 ft, shows a live size readout while dragging, and is saved when the pointer is released. Works with mouse and touch. An edge cannot be dragged past the containers inside the room: **to be implemented in phase 2, once containers exist**.
 - FR-3: Show a semi-transparent grid with 1 ft squares.
 
 ### Containers
@@ -120,7 +120,8 @@ The room plan is drawn with SVG. Reasons: the plan has tens of objects (not thou
 
 ## 13. Roadmap (simple → complex)
 0. Setup: tools, GitHub repository, Claude project, CLAUDE.md — **done**. The Angular frontend is scaffolded (SCSS, routing, no SSR).
-1. Rooms as resizable floor plans with a 1 ft grid — **in progress**: plan drawing, pages and local storage are done; resizing by dragging is next
+1. Rooms as resizable floor plans with a 1 ft grid — **done**: plan drawing, pages, local storage and resizing by dragging.
+   - Planned improvements to the plan view: zoom and pan (the view is frozen while dragging, so growing a room a lot takes several drags); resizing with the keyboard (accessibility); resize handles on the left and top edges (needs a rule for moving the containers inside, so it waits until containers exist).
 2. Containers on the plan: drag with snap, rotate, stack order
 3. Items: name, quantity, category, photo
 4. Search and filters
