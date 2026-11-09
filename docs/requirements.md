@@ -1,4 +1,4 @@
-# SorterHome — Requirements (v0.5)
+# SorterHome — Requirements (v0.6)
 
 Last updated: 2026-11-08
 Status: Requirements for v1 are agreed. Items marked **Open** still need a decision from the project owner.
@@ -36,10 +36,12 @@ A web app to organize storage containers at home and know exactly what is inside
 - **Display (v1):** imperial, feet and inches.
 - **Later:** the user chooses imperial or metric. Only the display and input layer changes; the stored data does not. In metric, the grid square would be 25 cm and the snap step 1 cm.
 - The code must never hard-code a display unit outside the formatting/parsing layer, so the switch stays easy.
+- 1 ft = 304.8 mm and 1 in = 25.4 mm are not whole numbers. Every conversion into stored data rounds to the nearest whole millimeter (error under 0.5 mm). Grid lines are only a drawing guide and may sit at fractional millimeter positions.
 
 ## 5. Functional requirements (v1)
 ### Rooms and plan
-- FR-1: Create, rename and delete rooms.
+- FR-1: Create, rename and delete rooms. The room name is required, at most 60 characters, and two rooms may have the same name.
+- FR-1b: A new room starts at **12 ft × 10 ft** (3658 × 3048 mm). Minimum size **4 ft × 4 ft** (1219 × 1219 mm). Maximum size **100 ft × 100 ft** (30480 × 30480 mm).
 - FR-2: Resize a room by dragging its edges or corners. The room shows its real size (for example 12 ft × 10 ft). An edge cannot be dragged past the containers inside the room.
 - FR-3: Show a semi-transparent grid with 1 ft squares.
 
