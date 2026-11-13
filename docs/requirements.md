@@ -135,8 +135,8 @@ The room plan is drawn with SVG. Reasons: the plan has tens of objects (not thou
 1. Rooms as resizable floor plans with a 1 ft grid — **done**: plan drawing, pages, local storage and resizing by dragging.
    - Planned improvements to the plan view: zoom and pan (the view is frozen while dragging, so growing a room a lot takes several drags); resizing with the keyboard (accessibility); resize handles on the left and top edges (needs a rule for moving the containers inside, so it waits until containers exist).
 2. Containers on the plan:
-   - 2.1 Container model, SVG toolbox, drag with green/red shadow, tap to add, name panel, delete, room cannot shrink under containers
-   - 2.2 Move containers with 1 in snap, rotate 90°
+   - 2.1 Container model, SVG toolbox, drag with green/red shadow, tap to add, name panel, delete, room cannot shrink under containers — **done**
+   - 2.2 Move containers with 1 in snap, rotate 90° — **done**
    - 2.3 Stacking, stack order
 3. Items: name, quantity, description, category, photo (the photo comes as its own step, with IndexedDB)
 4. Search and filters
@@ -145,3 +145,9 @@ The room plan is drawn with SVG. Reasons: the plan has tens of objects (not thou
 7. User accounts and shared households
 8. Offline mode
 9. Metric/imperial choice, more container types, moving mode
+
+### Planned improvements / known issues
+- Keyboard alternative to dragging for moving containers (WCAG 2.2, criterion 2.5.7), planned together with the keyboard resize of the room that is already listed in step 1.
+- The rename-room page shows an empty paragraph for the maximum-length error.
+- Review the short UI texts "Valid / Overlaps / Outside room".
+- Verify touch gestures on real devices (Android Chrome, iOS Safari) once the app is deployed; the browser emulation does not reproduce iOS Safari.

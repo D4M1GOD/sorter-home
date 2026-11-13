@@ -30,11 +30,14 @@
       [(selectedId)]="selectedId"
       (resized)="onResize($event)"
       (containerAdded)="onContainerAdded($event)"
+      (containerMoved)="onContainerMoved($event)"
     />
     <aside class="side" aria-label="Container details">
       @if (selectedContainer(); as container) {
         <app-container-panel
           [container]="container"
+          [rotateBlocked]="rotateBlocked()"
+          (rotated)="rotateSelected()"
           (renamed)="onContainerRenamed($event)"
           (deleted)="onContainerDeleted()"
         />

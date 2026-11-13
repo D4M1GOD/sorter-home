@@ -1,5 +1,6 @@
 import { Service, signal } from '@angular/core';
 import { Container, getContainerType, isValidContainerName } from './container.model';
+import { placementProblemIgnoring, rotatedContainer } from './container-move';
 import { containerRect, isPlacementValid, minRoomSizeFor } from './container-placement';
 import {
   clampRoomSize,
@@ -39,12 +40,16 @@ function isRoom(value: unknown): value is SavedRoom {
   );
 }
 
+/** A container as it can be found in localStorage: the rotation may be missing or wrong. */
+type SavedContainer = Omit<Container, 'rotation'> & { rotation?: unknown };
+
 /**
  * Checks the shape of a saved container. It only checks the data, not the placement: a
  * well-formed container is kept even if it sits outside the room or overlaps another one.
  * The placement rules are applied when the user adds, moves or resizes, not when loading.
+ * The rotation is not checked here: `loadContainers` repairs it instead of discarding the container.
  */
-function isContainer(value: unknown): value is Container {
+function isContainer(value: unknown): value is SavedContainer {
   if (typeof value !== 'object' || value === null) {
     return false;
   }
@@ -57,14 +62,14 @@ function isContainer(value: unknown): value is Container {
     typeof container['name'] === 'string' &&
     isValidContainerName(container['name']) &&
     Number.isInteger(container['xMm']) &&
-    Number.isInteger(container['yMm']) &&
-    (container['rotation'] === 0 || container['rotation'] === 90)
+    Number.isInteger(container['yMm'])
   );
 }
 
 /**
  * Reads the containers of a saved room. Rooms saved before containers existed have none.
- * Malformed entries and repeated ids are discarded.
+ * Malformed entries and repeated ids are discarded. A rotation that is missing or is not 0 or 90
+ * becomes 0: the container is kept, because losing a container is worse than losing its turn.
  */
 function loadContainers(value: unknown): Container[] {
   if (!Array.isArray(value)) {
@@ -81,7 +86,7 @@ function loadContainers(value: unknown): Container[] {
         name: item.name,
         xMm: item.xMm,
         yMm: item.yMm,
-        rotation: item.rotation,
+        rotation: item.rotation === 90 ? 90 : 0,
       });
     }
   }
@@ -204,6 +209,50 @@ export class RoomStore {
     return true;
   }
 
+  /**
+   * Moves a container to a new top-left corner (whole millimeters). The place is checked again
+   * here, so the data stays valid whatever the screen sends: it must be inside the room and not
+   * overlap another container (the container itself does not count). Returns false, and changes
+   * nothing, if the room or container does not exist, a value is not a whole number, or the
+   * place is not valid.
+   */
+  moveContainer(roomId: string, containerId: string, xMm: number, yMm: number): boolean {
+    const room = this.getById(roomId);
+    const container = room?.containers.find((c) => c.id === containerId);
+    if (!room || !container || !Number.isInteger(xMm) || !Number.isInteger(yMm)) {
+      return false;
+    }
+    const rect = { ...containerRect(container), xMm, yMm };
+    if (placementProblemIgnoring(rect, container.id, room, room.containers) !== null) {
+      return false;
+    }
+    if (xMm !== container.xMm || yMm !== container.yMm) {
+      this.updateContainer(roomId, containerId, (c) => ({ ...c, xMm, yMm }));
+    }
+    return true;
+  }
+
+  /**
+   * Turns a container 90° around its center (see `rotatedContainer`). The new place is checked
+   * again here. Returns false, and changes nothing, if the room or container does not exist or
+   * the rotated container would leave the room or overlap another one.
+   */
+  rotateContainer(roomId: string, containerId: string): boolean {
+    const room = this.getById(roomId);
+    const container = room?.containers.find((c) => c.id === containerId);
+    if (!room || !container) {
+      return false;
+    }
+    const rotated = rotatedContainer(container);
+    if (
+      placementProblemIgnoring(containerRect(rotated), container.id, room, room.containers) !== null
+    ) {
+      return false;
+    }
+    this.updateContainer(roomId, containerId, () => rotated);
+    return true;
+  }
+
   /** Removes a container. Returns false if the room or container does not exist. */
   removeContainer(roomId: string, containerId: string): boolean {
     const room = this.getById(roomId);
@@ -219,6 +268,17 @@ export class RoomStore {
 
   remove(id: string): void {
     this.update((rooms) => rooms.filter((room) => room.id !== id));
+  }
+
+  private updateContainer(
+    roomId: string,
+    containerId: string,
+    change: (container: Container) => Container,
+  ): void {
+    this.updateRoom(roomId, (room) => ({
+      ...room,
+      containers: room.containers.map((c) => (c.id === containerId ? change(c) : c)),
+    }));
   }
 
   private updateRoom(id: string, change: (room: Room) => Room): void {

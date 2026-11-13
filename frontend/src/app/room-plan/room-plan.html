@@ -82,11 +82,17 @@
     <g
       class="container"
       [class.selected]="view.id === selectedId()"
+      [class.moving]="view.id === movingId()"
       role="button"
       tabindex="0"
       [attr.aria-label]="view.name"
       [attr.aria-pressed]="view.id === selectedId()"
-      (click)="selectContainer(view.id)"
+      (pointerdown)="onContainerPointerDown(view.id, $event)"
+      (pointermove)="onContainerPointerMove($event)"
+      (pointerup)="onContainerPointerUp($event)"
+      (pointercancel)="onContainerPointerCancel($event)"
+      (lostpointercapture)="onContainerPointerCancel($event)"
+      (click)="onContainerClick(view.id)"
       (keydown.enter)="onContainerKey(view.id, $event)"
       (keydown.space)="onContainerKey(view.id, $event)"
     >
@@ -107,20 +113,15 @@
         [attr.height]="view.lid.depthMm"
         [attr.rx]="view.cornerRadius / 2"
       />
-      <line
-        class="container-lid"
-        [attr.x1]="view.lid.xMm"
-        [attr.y1]="view.lidLineYs[0]"
-        [attr.x2]="view.lid.xMm + view.lid.widthMm"
-        [attr.y2]="view.lidLineYs[0]"
-      />
-      <line
-        class="container-lid"
-        [attr.x1]="view.lid.xMm"
-        [attr.y1]="view.lidLineYs[1]"
-        [attr.x2]="view.lid.xMm + view.lid.widthMm"
-        [attr.y2]="view.lidLineYs[1]"
-      />
+      @for (line of view.lidLines; track $index) {
+        <line
+          class="container-lid"
+          [attr.x1]="line.x1"
+          [attr.y1]="line.y1"
+          [attr.x2]="line.x2"
+          [attr.y2]="line.y2"
+        />
+      }
       <text
         class="container-name"
         text-anchor="middle"

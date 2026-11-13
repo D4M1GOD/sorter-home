@@ -4,8 +4,8 @@ import { containerNameSchema } from '../core/container-name-schema';
 import { Container, getContainerType, isValidContainerName } from '../core/container.model';
 
 /**
- * Details of the selected container: its type (read only), an editable name and Delete with an
- * inline confirmation. It does not save anything: it emits events and the page saves.
+ * Details of the selected container: its type (read only), an editable name, Rotate 90° and
+ * Delete with an inline confirmation. It does not save anything: it emits events and the page saves.
  */
 @Component({
   selector: 'app-container-panel',
@@ -15,6 +15,12 @@ import { Container, getContainerType, isValidContainerName } from '../core/conta
 })
 export class ContainerPanel {
   readonly container = input.required<Container>();
+
+  /** True when the last rotation was blocked for lack of space. The page decides when to clear it. */
+  readonly rotateBlocked = input(false);
+
+  /** The user asked to rotate the container 90°. The page checks that it fits and saves. */
+  readonly rotated = output<void>();
 
   /** The new, trimmed name. Only emitted when the name is valid and changed. */
   readonly renamed = output<string>();
