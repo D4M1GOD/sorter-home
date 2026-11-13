@@ -25,7 +25,7 @@ describe('resizeRoom', () => {
     expect(resizeRoom('right', { x: feetToMm(14) + 10, y: 0 }, current).widthMm).toBe(4267);
     const up = resizeRoom('right', { x: feetToMm(14) + 15, y: 0 }, current).widthMm;
     expect(up).toBe(4293); // 169 in = 4292.6 mm
-    expect(Number.isInteger(up)).toBe(true);
+    expect(up % 1).toBe(0);
   });
 
   it('stops at the minimum size', () => {

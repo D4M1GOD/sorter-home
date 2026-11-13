@@ -50,11 +50,11 @@
   cursor: nwse-resize;
 }
 
-// Visible handle: a 14 px round dot on screen at any room size.
+// Visible handle: a 10 px black square on screen at any room size.
 .dot {
-  stroke: #2563eb;
-  stroke-width: 14;
-  stroke-linecap: round;
+  stroke: #000;
+  stroke-width: 10;
+  stroke-linecap: square;
   vector-effect: non-scaling-stroke;
   pointer-events: none;
 }
