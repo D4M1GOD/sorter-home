@@ -512,6 +512,364 @@ describe('RoomStore containers', () => {
     });
   });
 
+  describe('stacks', () => {
+    /** A room with container A, and container B put on top of it with the store. */
+    function twoStacked() {
+      const { store, room } = storeWithRoom();
+      const a = box('A', 1016, 1016);
+      const b = box('B', 2500, 2000);
+      store.addContainer(room.id, a);
+      expect(store.addContainerOnStack(room.id, b, a.id)).toBe(true);
+      return { store, room, a, b };
+    }
+
+    function stackLevels(store: RoomStore, roomId: string): Record<string, number> {
+      const levels: Record<string, number> = {};
+      for (const c of store.getById(roomId)?.containers ?? []) {
+        levels[c.name] = c.stackPosition;
+      }
+      return levels;
+    }
+
+    function savedRoom(containers: unknown[]) {
+      localStorage.setItem(
+        ROOMS_STORAGE_KEY,
+        JSON.stringify([{ id: 'r', name: 'R', widthMm: 3658, depthMm: 3048, containers }]),
+      );
+      return new RoomStore().getById('r')?.containers ?? [];
+    }
+
+    function saved(name: string, xMm: number, yMm: number, extra: Record<string, unknown> = {}) {
+      const { stackPosition: _ignored, ...container } = box(name, xMm, yMm);
+      return { ...container, id: name, ...extra };
+    }
+
+    describe('loading', () => {
+      it('gives level 0 to saved containers that have no stack position', () => {
+        const containers = savedRoom([saved('A', 100, 100), saved('B', 2000, 100)]);
+        expect(containers.map((c) => c.stackPosition)).toEqual([0, 0]);
+      });
+
+      it('keeps the container, with level 0, when the stack position is not valid', () => {
+        for (const stackPosition of [-1, 1.5, '2', null, {}, true]) {
+          const containers = savedRoom([saved('A', 100, 100, { stackPosition })]);
+          expect(containers.length).toBe(1);
+          expect(containers[0]).toMatchObject({ id: 'A', xMm: 100, yMm: 100, stackPosition: 0 });
+        }
+      });
+
+      it('makes a stack of saved containers that sit exactly on top of each other, first at the bottom', () => {
+        const containers = savedRoom([
+          saved('A', 100, 100),
+          saved('B', 100, 100),
+          saved('C', 100, 100),
+        ]);
+        expect(containers.map((c) => [c.id, c.stackPosition])).toEqual([
+          ['A', 0],
+          ['B', 1],
+          ['C', 2],
+        ]);
+      });
+
+      it('uses the saved stack position before the saved order, and closes the gaps', () => {
+        const containers = savedRoom([
+          saved('A', 100, 100, { stackPosition: 7 }),
+          saved('B', 100, 100, { stackPosition: 2 }),
+          saved('C', 100, 100, { stackPosition: 2 }),
+        ]);
+        expect(containers.map((c) => [c.id, c.stackPosition])).toEqual([
+          ['A', 2],
+          ['B', 0],
+          ['C', 1],
+        ]);
+      });
+
+      it('does not make stacks of partial overlaps or of other rotations, and keeps them as saved', () => {
+        const containers = savedRoom([
+          saved('A', 100, 100),
+          saved('B', 150, 100),
+          saved('C', 100, 100, { rotation: 90 }),
+        ]);
+        expect(containers.map((c) => [c.xMm, c.yMm, c.rotation, c.stackPosition])).toEqual([
+          [100, 100, 0, 0],
+          [150, 100, 0, 0],
+          [100, 100, 90, 0],
+        ]);
+      });
+
+      it('keeps the storage key and the saved stack positions after a reload', () => {
+        const { store, room, a } = twoStacked();
+        const again = new RoomStore().getById(room.id)?.containers ?? [];
+        expect(again.map((c) => [c.name, c.stackPosition])).toEqual([
+          ['A', 0],
+          ['B', 1],
+        ]);
+        expect(again[1]).toMatchObject({ xMm: a.xMm, yMm: a.yMm });
+        expect(JSON.parse(localStorage.getItem(ROOMS_STORAGE_KEY) ?? '[]')[0].containers[1]).toMatchObject({
+          stackPosition: 1,
+        });
+        expect(store.getById(room.id)?.containers.length).toBe(2);
+      });
+    });
+
+    describe('addContainerOnStack', () => {
+      it('adds the container on top, with the position and rotation of the stack', () => {
+        const { store, room } = storeWithRoom();
+        const a = box('A', 1016, 1016);
+        store.addContainer(room.id, a);
+        store.rotateContainer(room.id, a.id);
+        const turned = store.getById(room.id)!.containers[0];
+        const b = box('B', 0, 0);
+        expect(store.addContainerOnStack(room.id, b, a.id)).toBe(true);
+        expect(store.getById(room.id)!.containers[1]).toMatchObject({
+          name: 'B',
+          xMm: turned.xMm,
+          yMm: turned.yMm,
+          rotation: 90,
+          stackPosition: 1,
+        });
+      });
+
+      it('goes to the top of a stack of several containers, also when the target is a lower one', () => {
+        const { store, room, a } = twoStacked();
+        expect(store.addContainerOnStack(room.id, box('C', 0, 0), a.id)).toBe(true);
+        expect(stackLevels(store, room.id)).toEqual({ A: 0, B: 1, C: 2 });
+      });
+
+      it('rejects an unknown room or target, a repeated id and an invalid name, and changes nothing', () => {
+        const { store, room, a } = twoStacked();
+        const before = store.getById(room.id);
+        expect(store.addContainerOnStack('nope', box('C', 0, 0), a.id)).toBe(false);
+        expect(store.addContainerOnStack(room.id, box('C', 0, 0), 'nope')).toBe(false);
+        expect(store.addContainerOnStack(room.id, { ...box('C', 0, 0), id: a.id }, a.id)).toBe(false);
+        expect(store.addContainerOnStack(room.id, { ...box('C', 0, 0), name: '  ' }, a.id)).toBe(false);
+        expect(store.getById(room.id)).toBe(before);
+      });
+
+      it('rejects a stack whose place is not valid (saved outside the room)', () => {
+        localStorage.setItem(
+          ROOMS_STORAGE_KEY,
+          JSON.stringify([
+            {
+              id: 'r',
+              name: 'R',
+              widthMm: 3658,
+              depthMm: 3048,
+              containers: [saved('Out', 3600, 100)],
+            },
+          ]),
+        );
+        const store = new RoomStore();
+        const before = store.getById('r');
+        expect(store.addContainerOnStack('r', box('C', 0, 0), 'Out')).toBe(false);
+        expect(store.getById('r')).toBe(before);
+      });
+    });
+
+    describe('stackContainer', () => {
+      it('puts a container that is alone on top of a stack, with its position and rotation', () => {
+        const { store, room, a } = twoStacked();
+        store.rotateContainer(room.id, a.id);
+        const c = box('C', 100, 100);
+        store.addContainer(room.id, c);
+        expect(store.stackContainer(room.id, c.id, a.id)).toBe(true);
+        const turned = store.getById(room.id)!.containers[0];
+        expect(store.getById(room.id)!.containers.find((x) => x.name === 'C')).toMatchObject({
+          xMm: turned.xMm,
+          yMm: turned.yMm,
+          rotation: 90,
+          stackPosition: 2,
+        });
+      });
+
+      it('saves the result', () => {
+        const { store, room, a } = twoStacked();
+        const c = box('C', 100, 100);
+        store.addContainer(room.id, c);
+        store.stackContainer(room.id, c.id, a.id);
+        const again = new RoomStore().getById(room.id)!.containers;
+        expect(again.map((x) => x.stackPosition)).toEqual([0, 1, 2]);
+      });
+
+      it('does not stack a container that is in a stack with others', () => {
+        const { store, room, a, b } = twoStacked();
+        const c = box('C', 100, 100);
+        store.addContainer(room.id, c);
+        const before = store.getById(room.id);
+        expect(store.stackContainer(room.id, b.id, c.id)).toBe(false);
+        expect(store.stackContainer(room.id, a.id, c.id)).toBe(false);
+        expect(store.getById(room.id)).toBe(before);
+      });
+
+      it('does not stack a container on itself or on its own stack', () => {
+        const { store, room, a, b } = twoStacked();
+        const before = store.getById(room.id);
+        expect(store.stackContainer(room.id, a.id, a.id)).toBe(false);
+        expect(store.stackContainer(room.id, a.id, b.id)).toBe(false);
+        expect(store.getById(room.id)).toBe(before);
+      });
+
+      it('rejects unknown ids and changes nothing', () => {
+        const { store, room, a } = twoStacked();
+        const before = store.getById(room.id);
+        expect(store.stackContainer('nope', a.id, a.id)).toBe(false);
+        expect(store.stackContainer(room.id, 'nope', a.id)).toBe(false);
+        expect(store.stackContainer(room.id, a.id, 'nope')).toBe(false);
+        expect(store.getById(room.id)).toBe(before);
+      });
+    });
+
+    describe('unstackContainer', () => {
+      it('puts the container in the first free spot, alone, and keeps its rotation', () => {
+        const { store, room, a, b } = twoStacked();
+        store.rotateContainer(room.id, a.id);
+        expect(store.unstackContainer(room.id, b.id)).toBe(true);
+        const left = store.getById(room.id)!.containers.find((c) => c.id === b.id)!;
+        expect(left).toMatchObject({ xMm: 0, yMm: 0, rotation: 90, stackPosition: 0 });
+        expect(store.getById(room.id)!.containers.find((c) => c.id === a.id)!.stackPosition).toBe(0);
+      });
+
+      it('closes the gap in the stack it leaves', () => {
+        const { store, room, a } = twoStacked();
+        store.addContainerOnStack(room.id, box('C', 0, 0), a.id);
+        expect(store.unstackContainer(room.id, a.id)).toBe(true); // the bottom one leaves
+        expect(stackLevels(store, room.id)).toEqual({ A: 0, B: 0, C: 1 });
+      });
+
+      it('shows no free space: returns false and changes nothing', () => {
+        const { store, room, a, b } = twoStacked();
+        store.moveContainer(room.id, a.id, 0, 0);
+        store.addContainer(room.id, box('Under', 0, D));
+        store.resize(room.id, 1219, 1219); // 4 ft x 4 ft: the stack and the box under it fill it
+        const before = store.getById(room.id);
+        expect(store.unstackContainer(room.id, b.id)).toBe(false);
+        expect(store.getById(room.id)).toBe(before);
+      });
+
+      it('does nothing for a container that is alone, or an unknown id', () => {
+        const { store, room } = storeWithRoom();
+        const a = box('A', 100, 100);
+        store.addContainer(room.id, a);
+        const before = store.getById(room.id);
+        expect(store.unstackContainer(room.id, a.id)).toBe(false);
+        expect(store.unstackContainer(room.id, 'nope')).toBe(false);
+        expect(store.unstackContainer('nope', a.id)).toBe(false);
+        expect(store.getById(room.id)).toBe(before);
+      });
+    });
+
+    describe('moveInStack', () => {
+      it('swaps the container with the one above or below, and saves it', () => {
+        const { store, room, a, b } = twoStacked();
+        expect(store.moveInStack(room.id, a.id, 'up')).toBe(true);
+        expect(stackLevels(store, room.id)).toEqual({ A: 1, B: 0 });
+        expect(store.moveInStack(room.id, a.id, 'down')).toBe(true);
+        expect(stackLevels(store, room.id)).toEqual({ A: 0, B: 1 });
+        store.moveInStack(room.id, b.id, 'down');
+        expect(new RoomStore().getById(room.id)!.containers.map((c) => c.stackPosition)).toEqual([
+          1, 0,
+        ]);
+      });
+
+      it('returns false, and changes nothing, at the ends, for a container alone and for unknown ids', () => {
+        const { store, room, a, b } = twoStacked();
+        const lone = box('Lone', 100, 100);
+        store.addContainer(room.id, lone);
+        const before = store.getById(room.id);
+        expect(store.moveInStack(room.id, b.id, 'up')).toBe(false);
+        expect(store.moveInStack(room.id, a.id, 'down')).toBe(false);
+        expect(store.moveInStack(room.id, lone.id, 'up')).toBe(false);
+        expect(store.moveInStack(room.id, 'nope', 'up')).toBe(false);
+        expect(store.moveInStack('nope', a.id, 'up')).toBe(false);
+        expect(store.getById(room.id)).toBe(before);
+      });
+    });
+
+    describe('moving, rotating and removing', () => {
+      it('moves the whole stack: all its containers share the new position', () => {
+        const { store, room, a, b } = twoStacked();
+        expect(store.moveContainer(room.id, b.id, 2000, 1500)).toBe(true); // moves from the top one
+        const containers = store.getById(room.id)!.containers;
+        expect(containers.map((c) => [c.xMm, c.yMm, c.stackPosition])).toEqual([
+          [2000, 1500, 0],
+          [2000, 1500, 1],
+        ]);
+        expect(a.id).toBe(containers[0].id);
+      });
+
+      it('can move the stack over its own old place, and rejects a place over another container', () => {
+        const { store, room, a } = twoStacked();
+        const other = box('Other', 2500, 200);
+        store.addContainer(room.id, other);
+        expect(store.moveContainer(room.id, a.id, 1116, 1016)).toBe(true);
+        const before = store.getById(room.id);
+        expect(store.moveContainer(room.id, a.id, 2600, 200)).toBe(false);
+        expect(store.getById(room.id)).toBe(before);
+      });
+
+      it('rejects a place for the stack that is outside the room, and changes nothing', () => {
+        const { store, room, a } = twoStacked();
+        const before = store.getById(room.id);
+        expect(store.moveContainer(room.id, a.id, -1, 0)).toBe(false);
+        expect(store.getById(room.id)).toBe(before);
+      });
+
+      it('rotates the whole stack around the center of its footprint', () => {
+        const { store, room, a } = twoStacked();
+        expect(store.rotateContainer(room.id, a.id)).toBe(true);
+        const containers = store.getById(room.id)!.containers;
+        // 1016 mm = 40 in on both axes: the corner goes 127 mm right and 127 mm up.
+        expect(containers.map((c) => [c.xMm, c.yMm, c.rotation, c.stackPosition])).toEqual([
+          [1143, 889, 90, 0],
+          [1143, 889, 90, 1],
+        ]);
+      });
+
+      it('blocks the rotation of a stack that does not fit, and changes nothing', () => {
+        const { store, room, a } = twoStacked();
+        store.moveContainer(room.id, a.id, 1016, 0); // against the top wall
+        const before = store.getById(room.id);
+        expect(store.rotateContainer(room.id, a.id)).toBe(false);
+        expect(store.getById(room.id)).toBe(before);
+      });
+
+      it('blocks the rotation of a stack that would overlap a neighbor', () => {
+        const { store, room, a } = twoStacked();
+        store.addContainer(room.id, box('Under', 1016, 1016 + D));
+        const before = store.getById(room.id);
+        expect(store.rotateContainer(room.id, a.id)).toBe(false);
+        expect(store.getById(room.id)).toBe(before);
+      });
+
+      it('closes the gap when a container in the middle of a stack is removed', () => {
+        const { store, room, a, b } = twoStacked();
+        store.addContainerOnStack(room.id, box('C', 0, 0), a.id);
+        expect(store.removeContainer(room.id, b.id)).toBe(true);
+        expect(stackLevels(store, room.id)).toEqual({ A: 0, C: 1 });
+      });
+
+      it('removing the bottom or the top container keeps the levels from 0 with no gap', () => {
+        const { store, room, a, b } = twoStacked();
+        const c = box('C', 0, 0);
+        store.addContainerOnStack(room.id, c, a.id);
+        store.removeContainer(room.id, a.id);
+        expect(stackLevels(store, room.id)).toEqual({ B: 0, C: 1 });
+        store.removeContainer(room.id, c.id);
+        expect(stackLevels(store, room.id)).toEqual({ B: 0 });
+        expect(b.id).toBe(store.getById(room.id)!.containers[0].id);
+      });
+
+      it('does not let the room shrink under the footprint of a stack, which is one footprint', () => {
+        const { store, room } = twoStacked();
+        store.moveContainer(room.id, store.getById(room.id)!.containers[0].id, 2000, 1500);
+        store.resize(room.id, 1300, 1300);
+        // The same limit as for one container at 2000, 1500: 2794 x 2032 mm.
+        expect(store.getById(room.id)?.widthMm).toBe(2794);
+        expect(store.getById(room.id)?.depthMm).toBe(2032);
+      });
+    });
+  });
+
   describe('resize with containers', () => {
     it('does not shrink a room under its containers', () => {
       const { store, room } = storeWithRoom();

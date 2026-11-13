@@ -1,26 +1,45 @@
 import { Component, computed, input, linkedSignal, output } from '@angular/core';
 import { apply, form, FormField } from '@angular/forms/signals';
+import { ContainerStack } from '../container-stack/container-stack';
 import { containerNameSchema } from '../core/container-name-schema';
 import { Container, getContainerType, isValidContainerName } from '../core/container.model';
 
 /**
- * Details of the selected container: its type (read only), an editable name, Rotate 90° and
- * Delete with an inline confirmation. It does not save anything: it emits events and the page saves.
+ * Details of the selected container: its type (read only), an editable name, the list of its
+ * stack (when it has more than one container), Rotate 90°, a message area and Delete with an
+ * inline confirmation. It does not save anything: it emits events and the page saves.
  */
 @Component({
   selector: 'app-container-panel',
-  imports: [FormField],
+  imports: [ContainerStack, FormField],
   templateUrl: './container-panel.html',
   styleUrl: './container-panel.scss',
 })
 export class ContainerPanel {
   readonly container = input.required<Container>();
 
-  /** True when the last rotation was blocked for lack of space. The page decides when to clear it. */
-  readonly rotateBlocked = input(false);
+  /**
+   * The containers of the stack of this container, from the bottom to the top. The stack list
+   * and its buttons are shown only when there is more than one.
+   */
+  readonly stack = input<readonly Container[]>([]);
+
+  /**
+   * A message for the user, for example when a rotation was blocked for lack of space. It is empty
+   * when there is nothing to say. The page decides the text and when to clear it.
+   */
+  readonly notice = input('');
 
   /** The user asked to rotate the container 90°. The page checks that it fits and saves. */
   readonly rotated = output<void>();
+  /** The user chose another container of the stack in the list. */
+  readonly stackItemSelected = output<string>();
+  /** The user asked to move the container one level up in its stack. */
+  readonly movedUp = output<void>();
+  /** The user asked to move the container one level down in its stack. */
+  readonly movedDown = output<void>();
+  /** The user asked to take the container out of its stack. */
+  readonly removedFromStack = output<void>();
 
   /** The new, trimmed name. Only emitted when the name is valid and changed. */
   readonly renamed = output<string>();

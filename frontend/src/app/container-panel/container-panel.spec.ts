@@ -59,24 +59,24 @@ describe('ContainerPanel', () => {
 
     it('has an empty status area while the rotation is not blocked', async () => {
       const { element } = await setup();
-      const status = element.querySelector('.rotate-notice');
+      const status = element.querySelector('.notice');
       expect(status?.getAttribute('role')).toBe('status');
       expect(status?.textContent?.trim()).toBe('');
     });
 
     it('shows "Not enough space to rotate" in the same status area when it is blocked', async () => {
       const { fixture, element } = await setup();
-      const statusBefore = element.querySelector('.rotate-notice');
-      fixture.componentRef.setInput('rotateBlocked', true);
+      const statusBefore = element.querySelector('.notice');
+      fixture.componentRef.setInput('notice', 'Not enough space to rotate');
       fixture.detectChanges();
-      const status = element.querySelector('.rotate-notice');
+      const status = element.querySelector('.notice');
       expect(status).toBe(statusBefore); // the same element, so screen readers announce the change
       expect(status?.getAttribute('role')).toBe('status');
       expect(status?.textContent?.trim()).toBe('Not enough space to rotate');
 
-      fixture.componentRef.setInput('rotateBlocked', false);
+      fixture.componentRef.setInput('notice', '');
       fixture.detectChanges();
-      expect(element.querySelector('.rotate-notice')?.textContent?.trim()).toBe('');
+      expect(element.querySelector('.notice')?.textContent?.trim()).toBe('');
     });
 
     it('does not show the current rotation', async () => {
@@ -84,6 +84,83 @@ describe('ContainerPanel', () => {
       fixture.componentRef.setInput('container', { ...container, rotation: 90 });
       fixture.detectChanges();
       expect(element.textContent).not.toMatch(/rotation/i);
+    });
+  });
+
+  describe('stack', () => {
+    const below = { ...createContainer(TOUGH_BOX_27_GAL.id, 'Books', 0, 0), stackPosition: 0 };
+    const above = { ...container, stackPosition: 1 };
+
+    async function setupStacked() {
+      const result = await setup();
+      result.fixture.componentRef.setInput('container', above);
+      result.fixture.componentRef.setInput('stack', [below, above]);
+      result.fixture.detectChanges();
+      return result;
+    }
+
+    it('does not show the stack list for a container that is alone', async () => {
+      const { fixture, element } = await setup();
+      expect(element.querySelector('app-container-stack')).toBeNull();
+      fixture.componentRef.setInput('stack', [container]);
+      fixture.detectChanges();
+      expect(element.querySelector('app-container-stack')).toBeNull();
+      expect(button(element, 'Move up')).toBeUndefined();
+      expect(button(element, 'Remove from stack')).toBeUndefined();
+    });
+
+    it('shows the stack list, with the selected container highlighted, when the stack has several', async () => {
+      const { element } = await setupStacked();
+      expect(element.querySelector('app-container-stack')).not.toBeNull();
+      const rows = Array.from(element.querySelectorAll('.level')).map((r) =>
+        r.textContent?.replace(/\s+/g, ' ').trim(),
+      );
+      expect(rows).toEqual(['▸ Level 2 Toys', 'Level 1 Books']);
+      expect(element.querySelector('.level[aria-current="true"]')?.textContent).toContain('Toys');
+    });
+
+    it('passes up what the user does in the stack list', async () => {
+      const { fixture, element } = await setupStacked();
+      const selected = vi.fn();
+      const movedUp = vi.fn();
+      const movedDown = vi.fn();
+      const removed = vi.fn();
+      fixture.componentInstance.stackItemSelected.subscribe(selected);
+      fixture.componentInstance.movedUp.subscribe(movedUp);
+      fixture.componentInstance.movedDown.subscribe(movedDown);
+      fixture.componentInstance.removedFromStack.subscribe(removed);
+
+      (element.querySelectorAll('.level')[1] as HTMLButtonElement).click();
+      expect(selected).toHaveBeenCalledWith(below.id);
+      button(element, 'Move down')?.click();
+      expect(movedDown).toHaveBeenCalledTimes(1);
+      button(element, 'Remove from stack')?.click();
+      expect(removed).toHaveBeenCalledTimes(1);
+      button(element, 'Move up')?.click(); // the container is on top: ignored
+      expect(movedUp).not.toHaveBeenCalled();
+    });
+
+    it('orders the panel: name, stack list, Rotate 90°, messages, Delete', async () => {
+      const { element } = await setupStacked();
+      const parts = [
+        element.querySelector('form'),
+        element.querySelector('app-container-stack'),
+        button(element, 'Rotate 90°'),
+        element.querySelector('.notice'),
+        button(element, 'Delete'),
+      ] as Element[];
+      for (let i = 0; i < parts.length - 1; i++) {
+        expect(parts[i].compareDocumentPosition(parts[i + 1]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      }
+    });
+
+    it('shows any message in the same status area, also the one for a full room', async () => {
+      const { fixture, element } = await setupStacked();
+      fixture.componentRef.setInput('notice', 'There is no free space for another container in this room.');
+      fixture.detectChanges();
+      expect(element.querySelector('.notice')?.textContent?.trim()).toBe(
+        'There is no free space for another container in this room.',
+      );
     });
   });
 

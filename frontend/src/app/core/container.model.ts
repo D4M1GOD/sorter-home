@@ -39,13 +39,19 @@ export interface Container {
   xMm: number;
   yMm: number;
   rotation: ContainerRotation;
+  /**
+   * Place in its stack, counted from the bottom: 0 is the bottom container. Containers with the
+   * same top-left corner and rotation form one stack. A container alone is a stack of one.
+   * The user sees the level as `stackPosition + 1`.
+   */
+  stackPosition: number;
 }
 
 /** Container names follow the same rules as room names. */
 export const CONTAINER_NAME_MAX_LENGTH = ROOM_NAME_MAX_LENGTH;
 export const isValidContainerName = isValidRoomName;
 
-/** Creates a container with rotation 0. Throws if the name or the type is not valid. */
+/** Creates a container with rotation 0, alone in its stack. Throws if the name or the type is not valid. */
 export function createContainer(
   typeId: string,
   name: string,
@@ -58,7 +64,15 @@ export function createContainer(
   if (!getContainerType(typeId)) {
     throw new Error('Unknown container type');
   }
-  return { id: crypto.randomUUID(), typeId, name: name.trim(), xMm, yMm, rotation: 0 };
+  return {
+    id: crypto.randomUUID(),
+    typeId,
+    name: name.trim(),
+    xMm,
+    yMm,
+    rotation: 0,
+    stackPosition: 0,
+  };
 }
 
 /**
