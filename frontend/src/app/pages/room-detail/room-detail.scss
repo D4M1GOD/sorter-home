@@ -1,0 +1,29 @@
+// The global "main" stays 48 rem wide for the other pages. Only the plan and its panel are
+// wider here (up to 72 rem): the block is centered on the page and may be wider than "main".
+.workspace {
+  display: grid;
+  gap: 1rem;
+  width: min(72rem, calc(100vw - 2rem));
+  margin-left: 50%;
+  transform: translateX(-50%);
+}
+
+.side-empty {
+  // On narrow screens the panel goes below the plan, so the hint is only shown beside it.
+  display: none;
+  margin: 0;
+  color: #4b5563;
+}
+
+// Wide screens: the plan on the left and the panel on the right. The right column is always
+// reserved, so the plan does not change size when a container is selected.
+@media (min-width: 48rem) {
+  .workspace {
+    grid-template-columns: minmax(0, 1fr) 16rem;
+    align-items: start;
+  }
+
+  .side-empty {
+    display: block;
+  }
+}

@@ -1,4 +1,6 @@
 import { Service, signal } from '@angular/core';
+import { Container, getContainerType, isValidContainerName } from './container.model';
+import { containerRect, isPlacementValid, minRoomSizeFor } from './container-placement';
 import {
   clampRoomSize,
   isValidRoomName,
@@ -18,8 +20,11 @@ function isValidSize(value: unknown): value is number {
   );
 }
 
+/** A room as it can be found in localStorage: rooms saved before containers existed have none. */
+type SavedRoom = Omit<Room, 'containers'> & { containers?: unknown };
+
 /** Checks data read from localStorage, which could have been edited or corrupted. */
-function isRoom(value: unknown): value is Room {
+function isRoom(value: unknown): value is SavedRoom {
   if (typeof value !== 'object' || value === null) {
     return false;
   }
@@ -32,6 +37,55 @@ function isRoom(value: unknown): value is Room {
     isValidSize(room['widthMm']) &&
     isValidSize(room['depthMm'])
   );
+}
+
+/**
+ * Checks the shape of a saved container. It only checks the data, not the placement: a
+ * well-formed container is kept even if it sits outside the room or overlaps another one.
+ * The placement rules are applied when the user adds, moves or resizes, not when loading.
+ */
+function isContainer(value: unknown): value is Container {
+  if (typeof value !== 'object' || value === null) {
+    return false;
+  }
+  const container = value as Record<string, unknown>;
+  return (
+    typeof container['id'] === 'string' &&
+    container['id'].length > 0 &&
+    typeof container['typeId'] === 'string' &&
+    getContainerType(container['typeId']) !== undefined &&
+    typeof container['name'] === 'string' &&
+    isValidContainerName(container['name']) &&
+    Number.isInteger(container['xMm']) &&
+    Number.isInteger(container['yMm']) &&
+    (container['rotation'] === 0 || container['rotation'] === 90)
+  );
+}
+
+/**
+ * Reads the containers of a saved room. Rooms saved before containers existed have none.
+ * Malformed entries and repeated ids are discarded.
+ */
+function loadContainers(value: unknown): Container[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  const seenIds = new Set<string>();
+  const containers: Container[] = [];
+  for (const item of value) {
+    if (isContainer(item) && !seenIds.has(item.id)) {
+      seenIds.add(item.id);
+      containers.push({
+        id: item.id,
+        typeId: item.typeId,
+        name: item.name,
+        xMm: item.xMm,
+        yMm: item.yMm,
+        rotation: item.rotation,
+      });
+    }
+  }
+  return containers;
 }
 
 /** Reads the saved rooms. Any problem (no storage, bad JSON, wrong shape) gives an empty list. */
@@ -55,6 +109,7 @@ function loadRooms(): Room[] {
           name: item.name,
           widthMm: item.widthMm,
           depthMm: item.depthMm,
+          containers: loadContainers(item.containers),
         });
       }
     }
@@ -96,15 +151,18 @@ export class RoomStore {
   }
 
   /**
-   * Changes the size of a room. Lengths are rounded and kept between the minimum and maximum.
-   * Returns false if the room does not exist.
+   * Changes the size of a room. Lengths are rounded and kept between the minimum and maximum,
+   * and never smaller than the containers inside the room. Returns false if the room does
+   * not exist.
    */
   resize(id: string, widthMm: number, depthMm: number): boolean {
-    if (!this.getById(id)) {
+    const current = this.getById(id);
+    if (!current) {
       return false;
     }
-    const width = clampRoomSize(widthMm);
-    const depth = clampRoomSize(depthMm);
+    const min = minRoomSizeFor(current.containers);
+    const width = Math.max(min.widthMm, clampRoomSize(widthMm));
+    const depth = Math.max(min.depthMm, clampRoomSize(depthMm));
     this.update((rooms) =>
       rooms.map((room) =>
         room.id === id ? { ...room, widthMm: width, depthMm: depth } : room,
@@ -113,8 +171,58 @@ export class RoomStore {
     return true;
   }
 
+  /**
+   * Adds a container to a room. Returns false (and changes nothing) if the room does not exist,
+   * the container is not valid, its id is already used, or its place is not valid (it would
+   * leave the room or overlap another container).
+   */
+  addContainer(roomId: string, container: Container): boolean {
+    const room = this.getById(roomId);
+    if (
+      !room ||
+      !isValidContainerName(container.name) ||
+      !getContainerType(container.typeId) ||
+      room.containers.some((existing) => existing.id === container.id) ||
+      !isPlacementValid(containerRect(container), room, room.containers)
+    ) {
+      return false;
+    }
+    this.updateRoom(roomId, (r) => ({ ...r, containers: [...r.containers, container] }));
+    return true;
+  }
+
+  /** Renames a container. Returns false if the room or container does not exist or the name is not valid. */
+  renameContainer(roomId: string, containerId: string, name: string): boolean {
+    const room = this.getById(roomId);
+    if (!room || !isValidContainerName(name) || !room.containers.some((c) => c.id === containerId)) {
+      return false;
+    }
+    this.updateRoom(roomId, (r) => ({
+      ...r,
+      containers: r.containers.map((c) => (c.id === containerId ? { ...c, name: name.trim() } : c)),
+    }));
+    return true;
+  }
+
+  /** Removes a container. Returns false if the room or container does not exist. */
+  removeContainer(roomId: string, containerId: string): boolean {
+    const room = this.getById(roomId);
+    if (!room || !room.containers.some((c) => c.id === containerId)) {
+      return false;
+    }
+    this.updateRoom(roomId, (r) => ({
+      ...r,
+      containers: r.containers.filter((c) => c.id !== containerId),
+    }));
+    return true;
+  }
+
   remove(id: string): void {
     this.update((rooms) => rooms.filter((room) => room.id !== id));
+  }
+
+  private updateRoom(id: string, change: (room: Room) => Room): void {
+    this.update((rooms) => rooms.map((room) => (room.id === id ? change(room) : room)));
   }
 
   private update(change: (rooms: Room[]) => Room[]): void {

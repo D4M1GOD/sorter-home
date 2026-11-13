@@ -2,8 +2,9 @@
   #plan
   class="plan"
   [attr.viewBox]="viewBox()"
-  role="img"
+  role="group"
   [attr.aria-label]="'Plan of ' + room().name + ', ' + widthLabel() + ' by ' + depthLabel()"
+  (click)="onPlanClick($event)"
 >
   <rect class="floor" x="0" y="0" [attr.width]="shownSize().widthMm" [attr.height]="shownSize().depthMm" />
 
@@ -34,8 +35,8 @@
 
   <!--
     Resize handles. The stroke width of these lines is in screen pixels (non-scaling-stroke),
-    so the touch zone is the same size on screen for any room size. The "dot" lines are only
-    1 mm long: with round caps they are drawn as a round dot.
+    so the touch zone is the same size on screen for any room size. The "square" lines are only
+    1 mm long: with round caps they are drawn as a round square.
   -->
   <line
     class="hit hit-right"
@@ -73,22 +74,114 @@
     (pointercancel)="onPointerCancel($event)"
     (lostpointercapture)="onPointerCancel($event)"
   />
+  <!--
+    Containers are drawn after the resize hit zones, so a container next to a wall can be
+    selected. The outer half of the hit zone (outside the wall) can still be grabbed.
+  -->
+  @for (view of containerViews(); track view.id) {
+    <g
+      class="container"
+      [class.selected]="view.id === selectedId()"
+      role="button"
+      tabindex="0"
+      [attr.aria-label]="view.name"
+      [attr.aria-pressed]="view.id === selectedId()"
+      (click)="selectContainer(view.id)"
+      (keydown.enter)="onContainerKey(view.id, $event)"
+      (keydown.space)="onContainerKey(view.id, $event)"
+    >
+      <title>{{ view.name }}</title>
+      <rect
+        class="container-body"
+        [attr.x]="view.rect.xMm"
+        [attr.y]="view.rect.yMm"
+        [attr.width]="view.rect.widthMm"
+        [attr.height]="view.rect.depthMm"
+        [attr.rx]="view.cornerRadius"
+      />
+      <rect
+        class="container-lid"
+        [attr.x]="view.lid.xMm"
+        [attr.y]="view.lid.yMm"
+        [attr.width]="view.lid.widthMm"
+        [attr.height]="view.lid.depthMm"
+        [attr.rx]="view.cornerRadius / 2"
+      />
+      <line
+        class="container-lid"
+        [attr.x1]="view.lid.xMm"
+        [attr.y1]="view.lidLineYs[0]"
+        [attr.x2]="view.lid.xMm + view.lid.widthMm"
+        [attr.y2]="view.lidLineYs[0]"
+      />
+      <line
+        class="container-lid"
+        [attr.x1]="view.lid.xMm"
+        [attr.y1]="view.lidLineYs[1]"
+        [attr.x2]="view.lid.xMm + view.lid.widthMm"
+        [attr.y2]="view.lidLineYs[1]"
+      />
+      <text
+        class="container-name"
+        text-anchor="middle"
+        [attr.font-size]="view.fontSize"
+        [attr.x]="view.rect.xMm + view.rect.widthMm / 2"
+        [attr.y]="view.rect.yMm + view.rect.depthMm / 2"
+      >{{ view.label }}</text>
+    </g>
+  }
+
+  @if (shadow(); as s) {
+    <g class="shadow" [class.shadow-valid]="s.valid" [class.shadow-invalid]="!s.valid">
+      <rect
+        class="shadow-rect"
+        [attr.x]="s.rect.xMm"
+        [attr.y]="s.rect.yMm"
+        [attr.width]="s.rect.widthMm"
+        [attr.height]="s.rect.depthMm"
+      />
+      @if (!s.valid) {
+        <line
+          class="shadow-cross"
+          [attr.x1]="s.rect.xMm"
+          [attr.y1]="s.rect.yMm"
+          [attr.x2]="s.rect.xMm + s.rect.widthMm"
+          [attr.y2]="s.rect.yMm + s.rect.depthMm"
+        />
+        <line
+          class="shadow-cross"
+          [attr.x1]="s.rect.xMm + s.rect.widthMm"
+          [attr.y1]="s.rect.yMm"
+          [attr.x2]="s.rect.xMm"
+          [attr.y2]="s.rect.yMm + s.rect.depthMm"
+        />
+      }
+      <text
+        class="shadow-text"
+        text-anchor="middle"
+        [attr.font-size]="s.fontSize"
+        [attr.x]="s.rect.xMm + s.rect.widthMm / 2"
+        [attr.y]="s.rect.yMm + s.rect.depthMm / 2"
+      >{{ s.text }}</text>
+    </g>
+  }
+
   <line
-    class="dot"
+    class="square"
     [attr.x1]="shownSize().widthMm"
     [attr.y1]="shownSize().depthMm / 2"
     [attr.x2]="shownSize().widthMm + 1"
     [attr.y2]="shownSize().depthMm / 2"
   />
   <line
-    class="dot"
+    class="square"
     [attr.x1]="shownSize().widthMm / 2"
     [attr.y1]="shownSize().depthMm"
     [attr.x2]="shownSize().widthMm / 2 + 1"
     [attr.y2]="shownSize().depthMm"
   />
   <line
-    class="dot"
+    class="square"
     [attr.x1]="shownSize().widthMm"
     [attr.y1]="shownSize().depthMm"
     [attr.x2]="shownSize().widthMm + 1"
@@ -96,3 +189,15 @@
   />
 </svg>
 <p class="size-text">Size: {{ widthLabel() }} × {{ depthLabel() }}</p>
+
+<app-container-toolbox
+  (tap)="onToolboxTap($event)"
+  (dragMove)="onToolboxDragMove($event)"
+  (dragEnd)="onToolboxDragEnd($event)"
+  (dragCancel)="onToolboxDragCancel()"
+/>
+<p class="notice" role="status">
+  @if (noSpace()) {
+    There is no free space for another container in this room.
+  }
+</p>
