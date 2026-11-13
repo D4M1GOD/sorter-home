@@ -1,3 +1,4 @@
+import type { Container } from './container.model';
 import { feetToMm } from './units';
 
 /** A room is a floor plan seen from above. All lengths are whole millimeters. */
@@ -8,6 +9,8 @@ export interface Room {
   widthMm: number;
   /** Front-to-back size of the plan. */
   depthMm: number;
+  /** The containers placed in this room. */
+  containers: Container[];
 }
 
 export const ROOM_NAME_MAX_LENGTH = 60;
@@ -37,5 +40,6 @@ export function createRoom(name: string): Room {
     name: name.trim(),
     widthMm: ROOM_DEFAULT_WIDTH_MM,
     depthMm: ROOM_DEFAULT_DEPTH_MM,
+    containers: [],
   };
 }

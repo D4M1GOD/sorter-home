@@ -1,0 +1,40 @@
+<section class="panel" aria-labelledby="container-panel-title">
+  <h2 id="container-panel-title">Container</h2>
+
+  <p class="type"><span class="type-title">Type:</span> {{ typeLabel() }}</p>
+
+  <form (submit)="onSubmit($event)" novalidate>
+    <label for="container-name">Name</label>
+    <input
+      id="container-name"
+      type="text"
+      autocomplete="off"
+      [formField]="nameForm.name"
+      [attr.aria-invalid]="nameForm.name().touched() && nameForm.name().invalid()"
+      aria-describedby="container-name-status"
+      (blur)="commitName()"
+    />
+    <div id="container-name-status" role="alert">
+      @if (nameForm.name().touched() && nameForm.name().invalid()) {
+        @for (error of nameForm.name().errors(); track error.kind) {
+          <!-- The built-in max length error has no message: only show errors with a message. -->
+          @if (error.message) {
+            <p class="field-error">{{ error.message }}</p>
+          }
+        }
+      }
+    </div>
+  </form>
+
+  @if (confirming()) {
+    <div class="confirm" role="alert">
+      <span>Delete "{{ container().name }}"? This cannot be undone.</span>
+      <button class="button button--danger" type="button" (click)="confirmDelete()">
+        Yes, delete
+      </button>
+      <button class="button" type="button" (click)="cancelDelete()">Cancel</button>
+    </div>
+  } @else {
+    <button class="button button--danger" type="button" (click)="askDelete()">Delete</button>
+  }
+</section>

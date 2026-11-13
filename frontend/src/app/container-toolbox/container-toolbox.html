@@ -1,0 +1,32 @@
+<div class="toolbox" role="group" aria-label="Container toolbox">
+  <ul class="tiles">
+    @for (type of types; track type.id) {
+      <li>
+        <button
+          class="tile"
+          type="button"
+          (pointerdown)="onPointerDown(type.id, $event)"
+          (pointermove)="onPointerMove($event)"
+          (pointerup)="onPointerUp($event)"
+          (pointercancel)="onPointerCancel($event)"
+          (lostpointercapture)="onPointerCancel($event)"
+          (click)="onClick(type.id)"
+        >
+          <!-- Top view of the box, drawn here (no external image). -->
+          <svg class="icon" viewBox="0 0 100 100" aria-hidden="true" focusable="false">
+            <rect class="icon-latch" x="26" y="19" width="14" height="8" rx="2" />
+            <rect class="icon-latch" x="60" y="19" width="14" height="8" rx="2" />
+            <rect class="icon-latch" x="26" y="73" width="14" height="8" rx="2" />
+            <rect class="icon-latch" x="60" y="73" width="14" height="8" rx="2" />
+            <rect class="icon-body" x="10" y="25" width="80" height="50" rx="6" />
+            <rect class="icon-lid" x="17" y="32" width="66" height="36" rx="3" />
+            <line class="icon-lid" x1="17" y1="44" x2="83" y2="44" />
+            <line class="icon-lid" x1="17" y1="56" x2="83" y2="56" />
+          </svg>
+          <span class="tile-label">{{ type.label }}</span>
+        </button>
+      </li>
+    }
+  </ul>
+  <p class="hint">Drag a container onto the plan, or tap it to place it in the first free spot.</p>
+</div>

@@ -1,0 +1,66 @@
+:host {
+  display: block;
+}
+
+.tiles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+  width: 6.5rem;
+  padding: 0.5rem;
+  border: 1px solid #1f2937;
+  border-radius: 0.25rem;
+  background: #fff;
+  color: #1f2937;
+  font: inherit;
+  cursor: grab;
+  // The tile can be dragged with a finger without the page scrolling or selecting text.
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.icon {
+  display: block;
+  width: 100%;
+  aspect-ratio: 1;
+}
+
+.icon-body {
+  fill: #e5e7eb;
+  stroke: #1f2937;
+  stroke-width: 2;
+}
+
+.icon-lid {
+  fill: none;
+  stroke: #1f2937;
+  stroke-width: 1.5;
+}
+
+.icon-latch {
+  fill: #6b7280;
+  stroke: #1f2937;
+  stroke-width: 1;
+}
+
+.tile-label {
+  font-size: 0.875rem;
+  text-align: center;
+}
+
+.hint {
+  margin: 0.5rem 0 0;
+  color: #4b5563;
+  font-size: 0.875rem;
+}

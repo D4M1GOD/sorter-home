@@ -23,7 +23,26 @@
     </div>
   </form>
 
-  <app-room-plan [room]="room" (resized)="onResize($event)" />
+  <!-- Plan on the left and the container panel on the right (below the plan on narrow screens). -->
+  <div class="workspace">
+    <app-room-plan
+      [room]="room"
+      [(selectedId)]="selectedId"
+      (resized)="onResize($event)"
+      (containerAdded)="onContainerAdded($event)"
+    />
+    <aside class="side" aria-label="Container details">
+      @if (selectedContainer(); as container) {
+        <app-container-panel
+          [container]="container"
+          (renamed)="onContainerRenamed($event)"
+          (deleted)="onContainerDeleted()"
+        />
+      } @else {
+        <p class="side-empty">Select a container on the plan to see its details.</p>
+      }
+    </aside>
+  </div>
 } @else {
   <h1>Room not found</h1>
   <p>This room does not exist. <a routerLink="/rooms">Back to rooms</a></p>

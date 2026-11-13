@@ -18,6 +18,7 @@ describe('room model', () => {
     expect(room.widthMm).toBe(3658);
     expect(room.depthMm).toBe(3048);
     expect(room.id).toBeTruthy();
+    expect(room.containers).toEqual([]);
   });
 
   it('does not create a room with an invalid name', () => {

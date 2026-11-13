@@ -1,4 +1,4 @@
-import { feetToMm, inchesToMm, formatFeetInches, snapToInchMm } from './units';
+import { ceilToInchMm, feetToMm, inchesToMm, formatFeetInches, snapToInchMm } from './units';
 
 describe('units', () => {
   it('converts feet to whole millimeters', () => {
@@ -20,6 +20,17 @@ describe('units', () => {
     expect(snapToInchMm(3658)).toBe(3658); // 12 ft is already on an inch
     expect(snapToInchMm(3660)).toBe(3658);
     expect(snapToInchMm(30480)).toBe(30480);
+  });
+
+  it('rounds up to the next whole inch and never gives less than the input', () => {
+    expect(ceilToInchMm(0)).toBe(0);
+    expect(ceilToInchMm(762)).toBe(762); // exactly 30 in stays at 30 in
+    expect(ceilToInchMm(761)).toBe(762);
+    expect(ceilToInchMm(763)).toBe(787); // 30.04 in -> 31 in = 787.4 mm
+    expect(ceilToInchMm(775)).toBe(787);
+    for (let mm = 1; mm < 2000; mm++) {
+      expect(ceilToInchMm(mm)).toBeGreaterThanOrEqual(mm);
+    }
   });
 
   it('formats millimeters as feet and inches', () => {

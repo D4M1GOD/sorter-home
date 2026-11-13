@@ -51,12 +51,95 @@
 }
 
 // Visible handle: a 10 px black square on screen at any room size.
-.dot {
+.square {
   stroke: #000;
   stroke-width: 10;
   stroke-linecap: square;
   vector-effect: non-scaling-stroke;
   pointer-events: none;
+}
+
+// Containers at their real size. Strokes stay a fixed number of screen pixels.
+.container {
+  cursor: pointer;
+}
+
+.container-body {
+  fill: #dbe4ee;
+  stroke: #1f2937;
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+}
+
+.container-lid {
+  fill: none;
+  stroke: #1f2937;
+  stroke-opacity: 0.55;
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+.container-name {
+  fill: #111827;
+  font-family: system-ui, sans-serif;
+  dominant-baseline: middle;
+  pointer-events: none;
+  user-select: none;
+}
+
+// The selected container has a thick outline in a different color.
+.container.selected .container-body {
+  stroke: #1d4ed8;
+  stroke-width: 4;
+}
+
+// Shadow while dragging from the toolbox. Valid: green with a solid outline.
+// Invalid: red with a dashed outline, a cross and the word "Overlaps" or "Outside room",
+// so the state does not depend on color alone.
+.shadow {
+  pointer-events: none;
+}
+
+.shadow-rect {
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+}
+
+.shadow-valid .shadow-rect {
+  fill: rgba(22, 163, 74, 0.35);
+  stroke: #15803d;
+}
+
+.shadow-invalid .shadow-rect {
+  fill: rgba(220, 38, 38, 0.3);
+  stroke: #b91c1c;
+  stroke-dasharray: 8 5;
+}
+
+.shadow-cross {
+  stroke: #b91c1c;
+  stroke-width: 2;
+  stroke-opacity: 0.7;
+  vector-effect: non-scaling-stroke;
+}
+
+.shadow-text {
+  fill: #111827;
+  font-family: system-ui, sans-serif;
+  font-weight: 600;
+  dominant-baseline: middle;
+  // A white outline keeps the text readable over the cross.
+  paint-order: stroke;
+  stroke: #fff;
+  stroke-width: 4;
+  vector-effect: non-scaling-stroke;
+}
+
+.notice {
+  min-height: 1.5rem;
+  margin: 0.5rem 0 0;
+  color: #9b1c1c;
+  font-family: system-ui, sans-serif;
 }
 
 .size-text {

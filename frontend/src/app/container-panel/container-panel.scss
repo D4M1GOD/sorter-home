@@ -1,0 +1,32 @@
+:host {
+  display: block;
+}
+
+.panel {
+  padding: 1rem;
+  border: 1px solid #d1d5db;
+  border-radius: 0.25rem;
+}
+
+h2 {
+  margin: 0 0 0.75rem;
+  font-size: 1.125rem;
+}
+
+.type {
+  margin: 0 0 1rem;
+}
+
+.type-title {
+  color: #4b5563;
+}
+
+// The global style gives text inputs a 0.5rem right margin: leave room for it.
+input {
+  box-sizing: border-box;
+  width: calc(100% - 0.5rem);
+}
+
+form {
+  margin-bottom: 1rem;
+}
