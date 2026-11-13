@@ -1,5 +1,6 @@
 import { Component, output } from '@angular/core';
 import { CONTAINER_TYPES } from '../core/container.model';
+import { DRAG_THRESHOLD_PX } from '../core/drag';
 
 /** Where the pointer is while a tile is being dragged (screen coordinates). */
 export interface ToolboxDrag {
@@ -7,9 +8,6 @@ export interface ToolboxDrag {
   clientX: number;
   clientY: number;
 }
-
-/** The pointer must move this many screen pixels before a press becomes a drag instead of a tap. */
-const DRAG_THRESHOLD_PX = 6;
 
 interface Press {
   typeId: string;

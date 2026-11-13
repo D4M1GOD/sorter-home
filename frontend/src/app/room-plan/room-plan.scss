@@ -2,11 +2,16 @@
   display: block;
 }
 
+// touch-action: none must be on this outer <svg>, not on the elements inside it (containers,
+// resize handles). Browsers ignore touch-action on the children of an SVG, so a finger on them
+// is taken as a page scroll: the browser fires pointercancel and every drag is discarded.
+// Cost: a finger on the plan does not scroll the page or pinch-zoom it. Outside the plan it does.
 .plan {
   display: block;
   width: 100%;
   height: auto;
   max-height: 80vh;
+  touch-action: none;
 }
 
 .floor {
@@ -28,14 +33,14 @@
   vector-effect: non-scaling-stroke;
 }
 
-// Invisible touch zone: 44 px wide on screen at any room size or zoom.
+// Invisible touch zone: 44 px wide on screen at any room size or zoom. Dragging it with a finger
+// works because of the touch-action on .plan.
 .hit {
   stroke: transparent;
   stroke-width: 44;
   stroke-linecap: round;
   vector-effect: non-scaling-stroke;
   pointer-events: stroke;
-  touch-action: none;
 }
 
 .hit-right {
@@ -60,8 +65,17 @@
 }
 
 // Containers at their real size. Strokes stay a fixed number of screen pixels.
+// The grab cursor and user-select are for the mouse (no text selection while dragging).
+// Touch dragging works because of the touch-action on .plan.
 .container {
-  cursor: pointer;
+  cursor: grab;
+  user-select: none;
+}
+
+// The container being dragged stays in place, dimmed. The shadow shows where it would land.
+.container.moving {
+  cursor: grabbing;
+  opacity: 0.4;
 }
 
 .container-body {

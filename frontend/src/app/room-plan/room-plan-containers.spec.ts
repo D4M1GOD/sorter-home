@@ -33,16 +33,24 @@ describe('RoomPlan containers', () => {
     svg.getScreenCTM = () =>
       ({ inverse: () => ({ a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 }) }) as unknown as DOMMatrix;
     const added = vi.fn();
+    const moved = vi.fn();
     const resized = vi.fn();
     fixture.componentInstance.containerAdded.subscribe(added);
+    fixture.componentInstance.containerMoved.subscribe(moved);
     fixture.componentInstance.resized.subscribe(resized);
-    return { fixture, element, svg, added, resized, plan: fixture.componentInstance };
+    return { fixture, element, svg, added, moved, resized, plan: fixture.componentInstance };
   }
 
-  function pointer(target: Element, type: string, x: number, y: number): void {
+  function pointer(
+    target: Element,
+    type: string,
+    x: number,
+    y: number,
+    pointerType: 'mouse' | 'touch' = 'mouse',
+  ): void {
     const event = new MouseEvent(type, { clientX: x, clientY: y, bubbles: true });
     Object.defineProperty(event, 'pointerId', { value: 1 });
-    Object.defineProperty(event, 'pointerType', { value: 'mouse' });
+    Object.defineProperty(event, 'pointerType', { value: pointerType });
     target.dispatchEvent(event);
   }
 
@@ -98,6 +106,91 @@ describe('RoomPlan containers', () => {
       expect(shown.length).toBeLessThan(longName.length);
       expect(shown.endsWith('…')).toBe(true);
       expect(element.querySelector('.container title')?.textContent).toBe(longName);
+    });
+
+    describe('a rotated container', () => {
+      const upright = { ...box('A', 100, 200), id: 'a' };
+      const turned = { ...upright, rotation: 90 as const };
+
+      const num = (element: Element | null, name: string) => Number(element?.getAttribute(name));
+
+      function bodyAndLid(element: HTMLElement) {
+        return {
+          body: element.querySelector('.container-body'),
+          lid: element.querySelector('rect.container-lid'),
+          lines: Array.from(element.querySelectorAll('line.container-lid')),
+        };
+      }
+
+      it('has the same corner radius as the upright container, on the body and on the lid', () => {
+        const a = bodyAndLid(setup(roomWith([upright])).element);
+        const b = bodyAndLid(setup(roomWith([turned])).element);
+        expect(num(b.body, 'rx')).toBeGreaterThan(0);
+        expect(num(b.body, 'rx')).toBeCloseTo(num(a.body, 'rx'), 6);
+        expect(num(b.lid, 'rx')).toBeCloseTo(num(a.lid, 'rx'), 6);
+      });
+
+      it('has the same lid margin as the upright container', () => {
+        const a = bodyAndLid(setup(roomWith([upright])).element);
+        const b = bodyAndLid(setup(roomWith([turned])).element);
+        const margin = (r: ReturnType<typeof bodyAndLid>) => ({
+          x: num(r.lid, 'x') - num(r.body, 'x'),
+          y: num(r.lid, 'y') - num(r.body, 'y'),
+        });
+        expect(margin(b).x).toBeGreaterThan(0);
+        expect(margin(b).x).toBeCloseTo(margin(a).x, 6);
+        expect(margin(b).y).toBeCloseTo(margin(a).y, 6);
+        // The lid is smaller than the body by the same margin on every side.
+        expect(num(b.body, 'width') - num(b.lid, 'width')).toBeCloseTo(2 * margin(b).x, 6);
+        expect(num(b.body, 'height') - num(b.lid, 'height')).toBeCloseTo(2 * margin(b).y, 6);
+      });
+
+      it('draws two horizontal lid lines at 22% and 78% of the lid depth when upright', () => {
+        const { lid, lines } = bodyAndLid(setup(roomWith([upright])).element);
+        expect(lines.length).toBe(2);
+        const top = num(lid, 'y');
+        const depth = num(lid, 'height');
+        for (const [i, fraction] of [0.22, 0.78].entries()) {
+          expect(num(lines[i], 'y1')).toBeCloseTo(top + depth * fraction, 6);
+          expect(num(lines[i], 'y2')).toBeCloseTo(num(lines[i], 'y1'), 6);
+          expect(num(lines[i], 'x1')).toBeCloseTo(num(lid, 'x'), 6);
+          expect(num(lines[i], 'x2')).toBeCloseTo(num(lid, 'x') + num(lid, 'width'), 6);
+        }
+      });
+
+      it('turns the two lid lines vertical at 22% and 78% of the lid width', () => {
+        const { lid, lines } = bodyAndLid(setup(roomWith([turned])).element);
+        expect(lines.length).toBe(2);
+        const left = num(lid, 'x');
+        const width = num(lid, 'width');
+        for (const [i, fraction] of [0.22, 0.78].entries()) {
+          expect(num(lines[i], 'x1')).toBeCloseTo(left + width * fraction, 6);
+          expect(num(lines[i], 'x2')).toBeCloseTo(num(lines[i], 'x1'), 6);
+          expect(num(lines[i], 'y1')).toBeCloseTo(num(lid, 'y'), 6);
+          expect(num(lines[i], 'y2')).toBeCloseTo(num(lid, 'y') + num(lid, 'height'), 6);
+        }
+      });
+
+      it('keeps the lid lines at the same distance from the lid edge as the upright one', () => {
+        const a = bodyAndLid(setup(roomWith([upright])).element);
+        const b = bodyAndLid(setup(roomWith([turned])).element);
+        // Upright: distance from the top edge of the lid. Turned: distance from its left edge.
+        expect(num(b.lines[0], 'x1') - num(b.lid, 'x')).toBeCloseTo(
+          num(a.lines[0], 'y1') - num(a.lid, 'y'),
+          6,
+        );
+        expect(num(b.lines[1], 'x1') - num(b.lid, 'x')).toBeCloseTo(
+          num(a.lines[1], 'y1') - num(a.lid, 'y'),
+          6,
+        );
+      });
+
+      it('keeps the name horizontal', () => {
+        const { element } = setup(roomWith([turned]));
+        const name = element.querySelector('.container-name');
+        expect(name?.getAttribute('transform')).toBeNull();
+        expect(name?.textContent?.trim()).toBe('A');
+      });
     });
 
     it('updates when the room changes', () => {
@@ -275,6 +368,324 @@ describe('RoomPlan containers', () => {
     });
   });
 
+  describe('moving a container', () => {
+    // A is on whole inches (63 in, 49 in). The pointer holds it 100 mm right and 55 mm below its corner.
+    const a = { ...box('A', 1600, 1245), id: 'a' };
+    const b = { ...box('B', 2000, 1245), id: 'b' };
+    const grab = { x: 1700, y: 1300 };
+
+    function group(element: HTMLElement, index = 0): Element {
+      return element.querySelectorAll('.container')[index];
+    }
+
+    function shadowRect(element: HTMLElement): { x: string | null; y: string | null } {
+      const rect = element.querySelector('.shadow-rect');
+      return { x: rect?.getAttribute('x') ?? null, y: rect?.getAttribute('y') ?? null };
+    }
+
+    /** Presses the container and moves far enough (more than 6 px) to start a drag. */
+    function dragA(element: HTMLElement, x: number, y: number): Element {
+      const target = group(element);
+      pointer(target, 'pointerdown', grab.x, grab.y);
+      pointer(target, 'pointermove', x, y);
+      return target;
+    }
+
+    it('does not start a drag before the pointer moves 6 px', () => {
+      const { fixture, element, moved } = setup(roomWith([a]));
+      const target = group(element);
+      pointer(target, 'pointerdown', grab.x, grab.y);
+      pointer(target, 'pointermove', grab.x + 4, grab.y + 3); // 5 px
+      fixture.detectChanges();
+      expect(shadow(element)).toBeNull();
+      expect(target.classList.contains('moving')).toBe(false);
+      pointer(target, 'pointerup', grab.x + 4, grab.y + 3);
+      expect(moved).not.toHaveBeenCalled();
+    });
+
+    it('still selects with a plain click', () => {
+      const { fixture, element, plan } = setup(roomWith([a]));
+      const target = group(element);
+      pointer(target, 'pointerdown', grab.x, grab.y);
+      pointer(target, 'pointerup', grab.x, grab.y);
+      target.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      fixture.detectChanges();
+      expect(plan.selectedId()).toBe(a.id);
+    });
+
+    it('shows a green shadow at the snapped place, keeping the grab offset', () => {
+      const { fixture, element } = setup(roomWith([a]));
+      dragA(element, 2500, 1300);
+      fixture.detectChanges();
+      // 2500 - 100 = 2400 mm = 94.49 in -> 94 in = 2388 mm. The corner follows the pointer: no jump.
+      expect(shadowRect(element)).toEqual({ x: '2388', y: '1245' });
+      expect(shadow(element)?.classList.contains('shadow-valid')).toBe(true);
+      expect(shadowText(element)).toBe('Valid');
+      expect(element.querySelectorAll('.shadow-cross').length).toBe(0);
+    });
+
+    it('shadow has the real size of the container', () => {
+      const { fixture, element } = setup(roomWith([a]));
+      dragA(element, 2500, 1300);
+      fixture.detectChanges();
+      const rect = element.querySelector('.shadow-rect') as SVGElement;
+      expect(rect.getAttribute('width')).toBe(String(W));
+      expect(rect.getAttribute('height')).toBe(String(D));
+    });
+
+    it('keeps the real container in place and dimmed while dragging', () => {
+      const { fixture, element } = setup(roomWith([a]));
+      dragA(element, 2500, 1300);
+      fixture.detectChanges();
+      expect(group(element).classList.contains('moving')).toBe(true);
+      expect(element.querySelector('.container-body')?.getAttribute('x')).toBe('1600');
+      expect(element.querySelector('.container-body')?.getAttribute('y')).toBe('1245');
+    });
+
+    it('selects the container when the drag starts', () => {
+      const { fixture, element, plan } = setup(roomWith([a, b]));
+      expect(plan.selectedId()).toBeNull();
+      dragA(element, 2500, 1300);
+      fixture.detectChanges();
+      expect(plan.selectedId()).toBe(a.id);
+      expect(group(element).classList.contains('selected')).toBe(true);
+    });
+
+    it('uses the rotated footprint for the shadow of a rotated container', () => {
+      const rotated = { ...a, rotation: 90 as const };
+      const { fixture, element } = setup(roomWith([rotated]));
+      dragA(element, 2500, 1300);
+      fixture.detectChanges();
+      const rect = element.querySelector('.shadow-rect') as SVGElement;
+      expect(rect.getAttribute('width')).toBe(String(D));
+      expect(rect.getAttribute('height')).toBe(String(W));
+    });
+
+    it('emits the new place when dropped on green', () => {
+      const { fixture, element, moved } = setup(roomWith([a]));
+      const target = dragA(element, 2500, 1300);
+      pointer(target, 'pointerup', 2500, 1300);
+      fixture.detectChanges();
+      expect(moved).toHaveBeenCalledTimes(1);
+      expect(moved).toHaveBeenCalledWith({ id: 'a', xMm: 2388, yMm: 1245 });
+      expect(shadow(element)).toBeNull();
+      expect(group(element).classList.contains('moving')).toBe(false);
+    });
+
+    it('can be dropped over its own old place', () => {
+      const { element, moved } = setup(roomWith([a]));
+      const target = dragA(element, 1800, 1300); // 100 mm to the right: 1700 mm = 66.9 in -> 67 in
+      pointer(target, 'pointerup', 1800, 1300);
+      expect(moved).toHaveBeenCalledWith({ id: 'a', xMm: 1702, yMm: 1245 });
+    });
+
+    it('can be dropped against the walls', () => {
+      const { fixture, element, moved } = setup(roomWith([a, b]));
+      // Corner = pointer - grab offset: the corner goes to x = 0 (left wall), y = 0 (top wall).
+      const target = dragA(element, 100, 55);
+      fixture.detectChanges();
+      expect(shadowText(element)).toBe('Valid');
+      pointer(target, 'pointerup', 100, 55);
+      expect(moved).toHaveBeenCalledWith({ id: 'a', xMm: 0, yMm: 0 });
+    });
+
+    it('emits nothing when it is dropped on the same place', () => {
+      const { element, moved } = setup(roomWith([a]));
+      const target = dragA(element, grab.x + 10, grab.y); // 10 px, but the corner snaps back to 1600
+      pointer(target, 'pointerup', grab.x + 10, grab.y);
+      expect(moved).not.toHaveBeenCalled();
+    });
+
+    it('turns red, with a cross and "Overlaps", over another container, and drops nothing', () => {
+      const { fixture, element, moved } = setup(roomWith([a, b]));
+      const target = dragA(element, 2200, 1300); // the corner would be at x = 2100: over B
+      fixture.detectChanges();
+      expect(shadow(element)?.classList.contains('shadow-invalid')).toBe(true);
+      expect(shadowText(element)).toBe('Overlaps');
+      expect(element.querySelectorAll('.shadow-cross').length).toBe(2);
+      pointer(target, 'pointerup', 2200, 1300);
+      fixture.detectChanges();
+      expect(moved).not.toHaveBeenCalled();
+      expect(shadow(element)).toBeNull();
+      // The container is where it was.
+      expect(element.querySelector('.container-body')?.getAttribute('x')).toBe('1600');
+    });
+
+    it('turns red with "Outside room" when the corner would leave the walls, and drops nothing', () => {
+      const { fixture, element, moved } = setup(roomWith([a]));
+      const target = dragA(element, 50, 50);
+      fixture.detectChanges();
+      expect(shadowText(element)).toBe('Outside room');
+      expect(element.querySelectorAll('.shadow-cross').length).toBe(2);
+      pointer(target, 'pointerup', 50, 50);
+      expect(moved).not.toHaveBeenCalled();
+    });
+
+    it('drops nothing when released far outside the plan', () => {
+      const { element, moved } = setup(roomWith([a]));
+      const target = dragA(element, 90000, 90000);
+      pointer(target, 'pointerup', 90000, 90000);
+      expect(moved).not.toHaveBeenCalled();
+    });
+
+    it('drops nothing and removes the shadow when the browser cancels the gesture', () => {
+      const { fixture, element, moved } = setup(roomWith([a]));
+      const target = dragA(element, 2500, 1300);
+      pointer(target, 'pointercancel', 2500, 1300);
+      fixture.detectChanges();
+      expect(shadow(element)).toBeNull();
+      expect(group(element).classList.contains('moving')).toBe(false);
+      expect(moved).not.toHaveBeenCalled();
+    });
+
+    it('drops nothing when the container loses the pointer', () => {
+      const { fixture, element, moved } = setup(roomWith([a]));
+      const target = dragA(element, 2500, 1300);
+      pointer(target, 'lostpointercapture', 2500, 1300);
+      fixture.detectChanges();
+      expect(shadow(element)).toBeNull();
+      expect(moved).not.toHaveBeenCalled();
+    });
+
+    describe('Escape', () => {
+      function escape(): void {
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+      }
+
+      it('cancels a drag in progress: no shadow, nothing saved when the pointer is released', () => {
+        const { fixture, element, moved } = setup(roomWith([a]));
+        const target = dragA(element, 2500, 1300);
+        fixture.detectChanges();
+        expect(shadow(element)).not.toBeNull();
+
+        escape();
+        fixture.detectChanges();
+        expect(shadow(element)).toBeNull();
+        expect(group(element).classList.contains('moving')).toBe(false);
+
+        pointer(target, 'pointermove', 3000, 1300); // the same gesture cannot bring it back
+        fixture.detectChanges();
+        expect(shadow(element)).toBeNull();
+        pointer(target, 'pointerup', 3000, 1300);
+        expect(moved).not.toHaveBeenCalled();
+      });
+
+      it('does nothing when no drag is in progress', () => {
+        const { fixture, element, plan } = setup(roomWith([a]));
+        plan.selectedId.set(a.id);
+        escape();
+        fixture.detectChanges();
+        expect(plan.selectedId()).toBe(a.id);
+        expect(shadow(element)).toBeNull();
+      });
+
+      it('lets the next drag work normally', () => {
+        const { element, moved } = setup(roomWith([a]));
+        const target = dragA(element, 2500, 1300);
+        escape();
+        pointer(target, 'pointerup', 2500, 1300);
+        const again = dragA(element, 2500, 1300);
+        pointer(again, 'pointerup', 2500, 1300);
+        expect(moved).toHaveBeenCalledTimes(1);
+      });
+    });
+
+    // jsdom cannot check that the browser keeps the gesture (touch-action on the <svg>): that is
+    // tested by hand. These tests check that touch pointers go through the same logic as the mouse.
+    describe('with a finger (touch pointer)', () => {
+      it('moves a container, with the shadow while dragging and the new place on release', () => {
+        const { fixture, element, moved } = setup(roomWith([a]));
+        const target = group(element);
+        pointer(target, 'pointerdown', grab.x, grab.y, 'touch');
+        pointer(target, 'pointermove', 2500, 1300, 'touch');
+        fixture.detectChanges();
+        expect(shadowRect(element)).toEqual({ x: '2388', y: '1245' });
+        expect(shadowText(element)).toBe('Valid');
+        pointer(target, 'pointerup', 2500, 1300, 'touch');
+        expect(moved).toHaveBeenCalledWith({ id: 'a', xMm: 2388, yMm: 1245 });
+      });
+
+      it('selects a container with a tap', () => {
+        const { fixture, element, plan, moved } = setup(roomWith([a]));
+        const target = group(element);
+        pointer(target, 'pointerdown', grab.x, grab.y, 'touch');
+        pointer(target, 'pointerup', grab.x, grab.y, 'touch');
+        target.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        fixture.detectChanges();
+        expect(plan.selectedId()).toBe(a.id);
+        expect(moved).not.toHaveBeenCalled();
+      });
+
+      it('drops nothing on red', () => {
+        const { element, moved } = setup(roomWith([a, b]));
+        const target = group(element);
+        pointer(target, 'pointerdown', grab.x, grab.y, 'touch');
+        pointer(target, 'pointermove', 2200, 1300, 'touch'); // over B
+        pointer(target, 'pointerup', 2200, 1300, 'touch');
+        expect(moved).not.toHaveBeenCalled();
+      });
+
+      it('discards the drag when the browser cancels it, like it does when it takes it as a scroll', () => {
+        const { fixture, element, moved } = setup(roomWith([a]));
+        const target = group(element);
+        pointer(target, 'pointerdown', grab.x, grab.y, 'touch');
+        pointer(target, 'pointermove', 2500, 1300, 'touch');
+        pointer(target, 'pointercancel', 2500, 1300, 'touch');
+        fixture.detectChanges();
+        expect(shadow(element)).toBeNull();
+        expect(moved).not.toHaveBeenCalled();
+      });
+    });
+
+    it('ignores the click that the browser sends right after a drag', () => {
+      const { fixture, element, plan } = setup(roomWith([a]));
+      const target = dragA(element, 2500, 1300);
+      pointer(target, 'pointerup', 2500, 1300);
+      plan.selectedId.set(null);
+      target.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      fixture.detectChanges();
+      expect(plan.selectedId()).toBeNull(); // the click after the drag was skipped
+      target.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      expect(plan.selectedId()).toBe(a.id); // the next click selects as usual
+    });
+
+    it('ignores a press with the right mouse button', () => {
+      const { fixture, element, moved } = setup(roomWith([a]));
+      const target = group(element);
+      const down = new MouseEvent('pointerdown', {
+        clientX: grab.x,
+        clientY: grab.y,
+        button: 2,
+        bubbles: true,
+      });
+      Object.defineProperty(down, 'pointerId', { value: 1 });
+      Object.defineProperty(down, 'pointerType', { value: 'mouse' });
+      target.dispatchEvent(down);
+      pointer(target, 'pointermove', 2500, 1300);
+      fixture.detectChanges();
+      expect(shadow(element)).toBeNull();
+      pointer(target, 'pointerup', 2500, 1300);
+      expect(moved).not.toHaveBeenCalled();
+    });
+
+    it('drops the move when the container was rotated during the drag', () => {
+      const { fixture, element, moved } = setup(roomWith([a]));
+      const target = dragA(element, 2500, 1300);
+      fixture.componentRef.setInput('room', roomWith([{ ...a, rotation: 90 }]));
+      fixture.detectChanges();
+      pointer(target, 'pointerup', 2500, 1300);
+      expect(moved).not.toHaveBeenCalled();
+    });
+
+    it('does not change the size of the name when the container is rotated', () => {
+      const upright = setup(roomWith([a]));
+      const turned = setup(roomWith([{ ...a, rotation: 90 }]));
+      const size = (element: HTMLElement) =>
+        element.querySelector('.container-name')?.getAttribute('font-size');
+      expect(size(turned.element)).toBe(size(upright.element));
+    });
+  });
+
   describe('tap on a tile', () => {
     it('places the container in the top-left corner of an empty room', () => {
       const { element, added } = setup(roomWith([]));
@@ -329,6 +740,56 @@ describe('RoomPlan containers', () => {
       tile(element).click();
       fixture.detectChanges();
       expect(element.querySelector('.notice')?.textContent?.trim()).toBe('');
+    });
+  });
+
+  // As above: these check the logic with touch pointers, not the browser's touch-action handling.
+  describe('resizing the room with a finger (touch pointer)', () => {
+    const wide = feetToMm(12); // 3658
+    const deep = feetToMm(10); // 3048
+
+    it('resizes with the bottom-right corner', () => {
+      const { fixture, element, resized } = setup(roomWith([]));
+      const corner = element.querySelector('.hit-corner') as SVGElement;
+      pointer(corner, 'pointerdown', wide, deep, 'touch');
+      pointer(corner, 'pointermove', feetToMm(20), feetToMm(15), 'touch');
+      fixture.detectChanges();
+      expect(element.querySelector('.size-text')?.textContent?.trim()).toBe(
+        'Size: 20 ft 0 in × 15 ft 0 in',
+      );
+      pointer(corner, 'pointerup', feetToMm(20), feetToMm(15), 'touch');
+      expect(resized).toHaveBeenCalledWith({ widthMm: feetToMm(20), depthMm: feetToMm(15) });
+    });
+
+    it('resizes with the right edge, keeping the depth', () => {
+      const { element, resized } = setup(roomWith([]));
+      const edge = element.querySelector('.hit-right') as SVGElement;
+      pointer(edge, 'pointerdown', wide, 1500, 'touch');
+      pointer(edge, 'pointermove', feetToMm(20), 1500, 'touch');
+      pointer(edge, 'pointerup', feetToMm(20), 1500, 'touch');
+      expect(resized).toHaveBeenCalledWith({ widthMm: feetToMm(20), depthMm: deep });
+    });
+
+    it('resizes with the bottom edge, keeping the width', () => {
+      const { element, resized } = setup(roomWith([]));
+      const edge = element.querySelector('.hit-bottom') as SVGElement;
+      pointer(edge, 'pointerdown', 1500, deep, 'touch');
+      pointer(edge, 'pointermove', 1500, feetToMm(15), 'touch');
+      pointer(edge, 'pointerup', 1500, feetToMm(15), 'touch');
+      expect(resized).toHaveBeenCalledWith({ widthMm: wide, depthMm: feetToMm(15) });
+    });
+
+    it('discards the resize when the browser cancels the gesture', () => {
+      const { fixture, element, resized } = setup(roomWith([]));
+      const corner = element.querySelector('.hit-corner') as SVGElement;
+      pointer(corner, 'pointerdown', wide, deep, 'touch');
+      pointer(corner, 'pointermove', feetToMm(20), feetToMm(15), 'touch');
+      pointer(corner, 'pointercancel', feetToMm(20), feetToMm(15), 'touch');
+      fixture.detectChanges();
+      expect(resized).not.toHaveBeenCalled();
+      expect(element.querySelector('.size-text')?.textContent?.trim()).toBe(
+        'Size: 12 ft 0 in × 10 ft 0 in',
+      );
     });
   });
 

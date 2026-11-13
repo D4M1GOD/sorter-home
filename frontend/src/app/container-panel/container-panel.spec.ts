@@ -42,10 +42,49 @@ describe('ContainerPanel', () => {
     expect(input(element).value).toBe('Toys');
   });
 
-  it('does not offer rotate, add item or other actions in this step', async () => {
+  it('offers Rotate 90° and Delete, and no other actions in this step', async () => {
     const { element } = await setup();
     const labels = Array.from(element.querySelectorAll('button')).map((b) => b.textContent?.trim());
-    expect(labels).toEqual(['Delete']);
+    expect(labels).toEqual(['Rotate 90°', 'Delete']);
+  });
+
+  describe('rotate', () => {
+    it('emits "rotated" when the button is clicked, and saves nothing by itself', async () => {
+      const { fixture, element } = await setup();
+      const rotated = vi.fn();
+      fixture.componentInstance.rotated.subscribe(rotated);
+      button(element, 'Rotate 90°')?.click();
+      expect(rotated).toHaveBeenCalledTimes(1);
+    });
+
+    it('has an empty status area while the rotation is not blocked', async () => {
+      const { element } = await setup();
+      const status = element.querySelector('.rotate-notice');
+      expect(status?.getAttribute('role')).toBe('status');
+      expect(status?.textContent?.trim()).toBe('');
+    });
+
+    it('shows "Not enough space to rotate" in the same status area when it is blocked', async () => {
+      const { fixture, element } = await setup();
+      const statusBefore = element.querySelector('.rotate-notice');
+      fixture.componentRef.setInput('rotateBlocked', true);
+      fixture.detectChanges();
+      const status = element.querySelector('.rotate-notice');
+      expect(status).toBe(statusBefore); // the same element, so screen readers announce the change
+      expect(status?.getAttribute('role')).toBe('status');
+      expect(status?.textContent?.trim()).toBe('Not enough space to rotate');
+
+      fixture.componentRef.setInput('rotateBlocked', false);
+      fixture.detectChanges();
+      expect(element.querySelector('.rotate-notice')?.textContent?.trim()).toBe('');
+    });
+
+    it('does not show the current rotation', async () => {
+      const { fixture, element } = await setup();
+      fixture.componentRef.setInput('container', { ...container, rotation: 90 });
+      fixture.detectChanges();
+      expect(element.textContent).not.toMatch(/rotation/i);
+    });
   });
 
   describe('rename', () => {

@@ -27,7 +27,7 @@ export function getContainerType(typeId: string): ContainerType | undefined {
   return CONTAINER_TYPES.find((type) => type.id === typeId);
 }
 
-/** Rotation in degrees. It is always 0 until rotating is built (step 2.2). */
+/** Rotation in degrees. 90 swaps the length and width of the footprint on the plan. */
 export type ContainerRotation = 0 | 90;
 
 /** A physical box on the plan. It has no photo, description or category: those belong to items. */

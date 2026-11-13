@@ -26,6 +26,16 @@
     </div>
   </form>
 
+  <div class="rotate">
+    <button class="button" type="button" (click)="rotated.emit()">Rotate 90°</button>
+    <!-- Always in the page, empty when there is nothing to say, so screen readers announce changes. -->
+    <p class="rotate-notice" role="status">
+      @if (rotateBlocked()) {
+        Not enough space to rotate
+      }
+    </p>
+  </div>
+
   @if (confirming()) {
     <div class="confirm" role="alert">
       <span>Delete "{{ container().name }}"? This cannot be undone.</span>
