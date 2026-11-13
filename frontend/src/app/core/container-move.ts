@@ -39,19 +39,20 @@ export function moveTopLeft(
 }
 
 /**
- * Like `placementProblem`, but one container is left out of the overlap check: the one being
- * moved or rotated. Otherwise it would overlap with itself at its old position.
+ * Like `placementProblem`, but some containers are left out of the overlap check: the ones being
+ * moved, rotated or stacked (a whole stack moves together). Otherwise they would overlap with
+ * themselves at their old position.
  */
 export function placementProblemIgnoring(
   rect: Rect,
-  ignoredId: string,
+  ignoredIds: readonly string[],
   room: RoomSize,
   containers: readonly Container[],
 ): PlacementProblem | null {
   return placementProblem(
     rect,
     room,
-    containers.filter((container) => container.id !== ignoredId),
+    containers.filter((container) => !ignoredIds.includes(container.id)),
   );
 }
 

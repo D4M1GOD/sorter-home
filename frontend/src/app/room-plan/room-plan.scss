@@ -107,9 +107,27 @@
   stroke-width: 4;
 }
 
-// Shadow while dragging from the toolbox. Valid: green with a solid outline.
-// Invalid: red with a dashed outline, a cross and the word "Overlaps" or "Outside room",
-// so the state does not depend on color alone.
+// "x3" badge of a stack: dark with white text, in the corner of the top container.
+.stack-badge {
+  fill: #1f2937;
+  stroke: #fff;
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+.stack-badge-text {
+  fill: #fff;
+  font-family: system-ui, sans-serif;
+  font-weight: 700;
+  dominant-baseline: middle;
+  pointer-events: none;
+  user-select: none;
+}
+
+// Shadow while dragging. Valid: green with a solid outline. Invalid: red with a dashed outline, a
+// cross and text ("Overlaps", "Outside room"...). Stack: blue with a dotted outline and the text
+// "Stack on <name>" and "Level N". The text carries the meaning, so the state does not depend
+// on color or outline alone.
 .shadow {
   pointer-events: none;
 }
@@ -128,6 +146,14 @@
   fill: rgba(220, 38, 38, 0.3);
   stroke: #b91c1c;
   stroke-dasharray: 8 5;
+}
+
+.shadow-stack .shadow-rect {
+  fill: rgba(37, 99, 235, 0.3);
+  stroke: #1d4ed8;
+  stroke-width: 3;
+  stroke-dasharray: 2 5;
+  stroke-linecap: round;
 }
 
 .shadow-cross {

@@ -281,9 +281,10 @@ describe('RoomPlan containers', () => {
       expect(element.querySelectorAll('.shadow-cross').length).toBe(0);
     });
 
-    it('turns red, with a cross and the word "Overlaps", over another container', () => {
+    it('turns red, with a cross and the word "Overlaps", when the footprints overlap but the pointer is not on the container', () => {
+      // A covers x 1500..2275: the pointer at 2400 is outside it, but the shadow (x 2007..2782) overlaps it.
       const { fixture, element } = setup(roomWith([box('A', 1500, 1200)]));
-      dragTo(element, 2000, 1500);
+      dragTo(element, 2400, 1500);
       fixture.detectChanges();
       expect(shadow(element)?.classList.contains('shadow-invalid')).toBe(true);
       expect(shadow(element)?.classList.contains('shadow-valid')).toBe(false);
@@ -333,8 +334,8 @@ describe('RoomPlan containers', () => {
 
     it('creates nothing when dropped on red (overlap)', () => {
       const { fixture, element, added } = setup(roomWith([box('A', 1500, 1200)]));
-      dragTo(element, 2000, 1500);
-      pointer(tile(element), 'pointerup', 2000, 1500);
+      dragTo(element, 2400, 1500);
+      pointer(tile(element), 'pointerup', 2400, 1500);
       fixture.detectChanges();
       expect(added).not.toHaveBeenCalled();
       expect(shadow(element)).toBeNull();
@@ -498,12 +499,13 @@ describe('RoomPlan containers', () => {
 
     it('turns red, with a cross and "Overlaps", over another container, and drops nothing', () => {
       const { fixture, element, moved } = setup(roomWith([a, b]));
-      const target = dragA(element, 2200, 1300); // the corner would be at x = 2100: over B
+      // The corner would be at x = 2700 and overlaps B (x 2000..2775), but the pointer (2800) is outside B.
+      const target = dragA(element, 2800, 1300);
       fixture.detectChanges();
       expect(shadow(element)?.classList.contains('shadow-invalid')).toBe(true);
       expect(shadowText(element)).toBe('Overlaps');
       expect(element.querySelectorAll('.shadow-cross').length).toBe(2);
-      pointer(target, 'pointerup', 2200, 1300);
+      pointer(target, 'pointerup', 2800, 1300);
       fixture.detectChanges();
       expect(moved).not.toHaveBeenCalled();
       expect(shadow(element)).toBeNull();
@@ -620,8 +622,8 @@ describe('RoomPlan containers', () => {
         const { element, moved } = setup(roomWith([a, b]));
         const target = group(element);
         pointer(target, 'pointerdown', grab.x, grab.y, 'touch');
-        pointer(target, 'pointermove', 2200, 1300, 'touch'); // over B
-        pointer(target, 'pointerup', 2200, 1300, 'touch');
+        pointer(target, 'pointermove', 2800, 1300, 'touch'); // the corner overlaps B, the pointer does not
+        pointer(target, 'pointerup', 2800, 1300, 'touch');
         expect(moved).not.toHaveBeenCalled();
       });
 
@@ -683,6 +685,346 @@ describe('RoomPlan containers', () => {
       const size = (element: HTMLElement) =>
         element.querySelector('.container-name')?.getAttribute('font-size');
       expect(size(turned.element)).toBe(size(upright.element));
+    });
+  });
+
+  describe('stacks', () => {
+    // A stack of two at (2000, 1000) (x 2000..2775, y 1000..1521) and a container X alone.
+    const bottom = { ...box('Bottom', 2000, 1000), id: 'bottom', stackPosition: 0 };
+    const top = { ...box('Top', 2000, 1000), id: 'top', stackPosition: 1 };
+    const third = { ...box('Third', 2000, 1000), id: 'third', stackPosition: 2 };
+    const x = { ...box('X', 500, 500), id: 'x' };
+
+    const num = (element: Element | null, name: string) => Number(element?.getAttribute(name));
+
+    function byLabel(element: HTMLElement, label: string): Element {
+      return element.querySelector(`.container[aria-label="${label}"]`) as Element;
+    }
+
+    function shadowLines(element: HTMLElement): string[] {
+      return Array.from(element.querySelectorAll('.shadow-text tspan')).map(
+        (t) => t.textContent?.trim() ?? '',
+      );
+    }
+
+    function shadowClass(element: HTMLElement): string {
+      const g = shadow(element);
+      return ['shadow-valid', 'shadow-invalid', 'shadow-stack']
+        .filter((c) => g?.classList.contains(c))
+        .join(' ');
+    }
+
+    describe('drawing', () => {
+      it('draws only the top container of a stack, with its name', () => {
+        const { element } = setup(roomWith([bottom, top, x]));
+        expect(element.querySelectorAll('.container').length).toBe(2); // the stack and X
+        const names = Array.from(element.querySelectorAll('.container-name')).map((n) =>
+          n.textContent?.trim(),
+        );
+        expect(names).toEqual(['Top', 'X']);
+      });
+
+      it('shows the number of containers in a badge, as text', () => {
+        const { element } = setup(roomWith([bottom, top, third, x]));
+        const badges = element.querySelectorAll('.stack-badge-text');
+        expect(badges.length).toBe(1); // none for X, which is alone
+        expect(badges[0].textContent?.trim()).toBe('x3');
+        expect(byLabel(element, 'Third, stack of 3').querySelector('.stack-badge')).not.toBeNull();
+        expect(byLabel(element, 'X').querySelector('.stack-badge')).toBeNull();
+      });
+
+      it('draws the badge inside the footprint of the stack', () => {
+        const { element } = setup(roomWith([bottom, top]));
+        const badge = element.querySelector('.stack-badge');
+        const body = element.querySelector('.container-body');
+        expect(num(badge, 'x')).toBeGreaterThanOrEqual(num(body, 'x'));
+        expect(num(badge, 'x') + num(badge, 'width')).toBeLessThanOrEqual(
+          num(body, 'x') + num(body, 'width'),
+        );
+        expect(num(badge, 'y')).toBeGreaterThanOrEqual(num(body, 'y'));
+        expect(num(badge, 'y') + num(badge, 'height')).toBeLessThanOrEqual(
+          num(body, 'y') + num(body, 'height'),
+        );
+      });
+
+      it('draws a rotated stack with the rotated footprint and the badge inside it', () => {
+        const turned = [bottom, top].map((c) => ({ ...c, rotation: 90 as const }));
+        const { element } = setup(roomWith(turned));
+        const body = element.querySelector('.container-body');
+        expect(num(body, 'width')).toBe(D);
+        expect(num(body, 'height')).toBe(W);
+        const badge = element.querySelector('.stack-badge');
+        expect(num(badge, 'x') + num(badge, 'width')).toBeLessThanOrEqual(num(body, 'x') + D);
+      });
+
+      it('names the stack for assistive technology', () => {
+        const { element } = setup(roomWith([bottom, top]));
+        const group = byLabel(element, 'Top, stack of 2');
+        expect(group).not.toBeNull();
+        expect(group.querySelector('title')?.textContent).toBe('Top, stack of 2');
+      });
+
+      it('draws a container that is alone as before: no badge, plain name', () => {
+        const { element } = setup(roomWith([x]));
+        expect(element.querySelector('.stack-badge')).toBeNull();
+        expect(byLabel(element, 'X')).not.toBeNull();
+      });
+
+      it('keeps the name, lid margin and lines of the top container', () => {
+        const { element } = setup(roomWith([bottom, top]));
+        expect(element.querySelectorAll('line.container-lid').length).toBe(2);
+      });
+    });
+
+    describe('selecting', () => {
+      it('selects the container on top when the stack is clicked', () => {
+        const { fixture, element, plan } = setup(roomWith([bottom, top]));
+        byLabel(element, 'Top, stack of 2').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        fixture.detectChanges();
+        expect(plan.selectedId()).toBe('top');
+      });
+
+      it('selects the container on top with the keyboard', () => {
+        const { element, plan } = setup(roomWith([bottom, top]));
+        byLabel(element, 'Top, stack of 2').dispatchEvent(
+          new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }),
+        );
+        expect(plan.selectedId()).toBe('top');
+      });
+
+      it('shows the selected outline on the stack when a hidden container is selected', () => {
+        const { fixture, element, plan } = setup(roomWith([bottom, top, x]));
+        plan.selectedId.set('bottom');
+        fixture.detectChanges();
+        const group = byLabel(element, 'Top, stack of 2');
+        expect(group.classList.contains('selected')).toBe(true);
+        expect(group.getAttribute('aria-pressed')).toBe('true');
+        expect(byLabel(element, 'X').classList.contains('selected')).toBe(false);
+      });
+    });
+
+    describe('dragging a stack of several containers', () => {
+      it('moves the whole stack: it emits the top container with the new place', () => {
+        const { fixture, element, moved } = setup(roomWith([bottom, top]));
+        const group = byLabel(element, 'Top, stack of 2');
+        pointer(group, 'pointerdown', 2100, 1100); // grab offset (100, 100)
+        pointer(group, 'pointermove', 1100, 2100);
+        fixture.detectChanges();
+        expect(shadowClass(element)).toBe('shadow-valid');
+        expect(shadowText(element)).toBe('Valid');
+        expect(group.classList.contains('moving')).toBe(true);
+        pointer(group, 'pointerup', 1100, 2100);
+        // The corner is (1000, 2000) mm, snapped to whole inches: 39 in = 991 mm and 79 in = 2007 mm.
+        expect(moved).toHaveBeenCalledWith({ id: 'top', xMm: 991, yMm: 2007 });
+      });
+
+      it('can be dropped over its own old place, because its own containers do not count', () => {
+        const { element, moved } = setup(roomWith([bottom, top]));
+        const group = byLabel(element, 'Top, stack of 2');
+        pointer(group, 'pointerdown', 2100, 1100);
+        pointer(group, 'pointermove', 2300, 1100);
+        pointer(group, 'pointerup', 2300, 1100);
+        // The corner (2200, 1000) snaps to 87 in = 2210 mm and 39 in = 991 mm.
+        expect(moved).toHaveBeenCalledWith({ id: 'top', xMm: 2210, yMm: 991 });
+      });
+
+      it('is blocked, in red, with an explanation, when the pointer is on another container', () => {
+        const { fixture, element, moved } = setup(roomWith([x, bottom, top]));
+        const group = byLabel(element, 'Top, stack of 2');
+        pointer(group, 'pointerdown', 2100, 1100);
+        pointer(group, 'pointermove', 600, 600); // the pointer is on X (x 500..1275, y 500..1021)
+        fixture.detectChanges();
+        expect(shadowClass(element)).toBe('shadow-invalid');
+        expect(shadowLines(element)).toEqual(["Can't place a stack", 'on a container']);
+        expect(element.querySelectorAll('.shadow-cross').length).toBe(2);
+        pointer(group, 'pointerup', 600, 600);
+        fixture.detectChanges();
+        expect(moved).not.toHaveBeenCalled();
+        expect(shadow(element)).toBeNull();
+      });
+
+      it('is red (overlap) when the footprints overlap but the pointer is not on the container', () => {
+        const { fixture, element, moved } = setup(roomWith([x, bottom, top]));
+        const group = byLabel(element, 'Top, stack of 2');
+        pointer(group, 'pointerdown', 2100, 1100);
+        // The corner (1200, 600) overlaps X (x 500..1275); the pointer (x 1300) is outside X.
+        pointer(group, 'pointermove', 1300, 700);
+        fixture.detectChanges();
+        expect(shadowClass(element)).toBe('shadow-invalid');
+        expect(shadowText(element)).toBe('Overlaps');
+        pointer(group, 'pointerup', 1300, 700);
+        expect(moved).not.toHaveBeenCalled();
+      });
+    });
+
+    describe('dropping a container on a stack (moving it)', () => {
+      function startDrag(element: HTMLElement, x1: number, y1: number, pointerType: 'mouse' | 'touch' = 'mouse') {
+        const group = byLabel(element, 'X');
+        pointer(group, 'pointerdown', 600, 600, pointerType); // grab offset (100, 100)
+        pointer(group, 'pointermove', x1, y1, pointerType);
+        return group;
+      }
+
+      it('shows a blue shadow at the place of the stack, with the text "Stack on <name>" and "Level N"', () => {
+        const { fixture, element } = setup(roomWith([x, bottom, top]));
+        startDrag(element, 2200, 1200); // the pointer is inside the stack
+        fixture.detectChanges();
+        expect(shadowClass(element)).toBe('shadow-stack');
+        expect(shadowLines(element)).toEqual(['Stack on Top', 'Level 3']);
+        const rect = element.querySelector('.shadow-rect');
+        expect([num(rect, 'x'), num(rect, 'y'), num(rect, 'width'), num(rect, 'height')]).toEqual([
+          2000, 1000, W, D,
+        ]);
+        expect(element.querySelectorAll('.shadow-cross').length).toBe(0);
+      });
+
+      it('gives the level that the container would have in a taller stack', () => {
+        const { fixture, element } = setup(roomWith([x, bottom, top, third]));
+        startDrag(element, 2200, 1200);
+        fixture.detectChanges();
+        expect(shadowLines(element)).toEqual(['Stack on Third', 'Level 4']);
+      });
+
+      it('shortens a long name so the text fits', () => {
+        const longTop = { ...top, name: 'A very long container name that cannot fit' };
+        const { fixture, element } = setup(roomWith([x, bottom, longTop]));
+        startDrag(element, 2200, 1200);
+        fixture.detectChanges();
+        const [first] = shadowLines(element);
+        expect(first.startsWith('Stack on A very')).toBe(true);
+        expect(first.endsWith('…')).toBe(true);
+        expect(first.length).toBeLessThanOrEqual(20);
+      });
+
+      it('uses the position and the rotation of a rotated stack', () => {
+        const turned = [bottom, top].map((c) => ({ ...c, rotation: 90 as const }));
+        const { fixture, element } = setup(roomWith([x, ...turned]));
+        startDrag(element, 2200, 1200);
+        fixture.detectChanges();
+        const rect = element.querySelector('.shadow-rect');
+        expect([num(rect, 'width'), num(rect, 'height')]).toEqual([D, W]);
+      });
+
+      it('emits containerStacked when it is dropped on the stack, and does not move it', () => {
+        const { fixture, element, plan } = setup(roomWith([x, bottom, top]));
+        const stacked = vi.fn();
+        const moved = vi.fn();
+        plan.containerStacked.subscribe(stacked);
+        plan.containerMoved.subscribe(moved);
+        const group = startDrag(element, 2200, 1200);
+        pointer(group, 'pointerup', 2200, 1200);
+        fixture.detectChanges();
+        expect(stacked).toHaveBeenCalledTimes(1);
+        expect(stacked).toHaveBeenCalledWith({ id: 'x', targetId: 'top' });
+        expect(moved).not.toHaveBeenCalled();
+        expect(shadow(element)).toBeNull();
+      });
+
+      it('works with a finger too', () => {
+        const { element, plan } = setup(roomWith([x, bottom, top]));
+        const stacked = vi.fn();
+        plan.containerStacked.subscribe(stacked);
+        const group = startDrag(element, 2200, 1200, 'touch');
+        pointer(group, 'pointerup', 2200, 1200, 'touch');
+        expect(stacked).toHaveBeenCalledWith({ id: 'x', targetId: 'top' });
+      });
+
+      it('stays red, and does nothing, when the footprints overlap but the pointer is not inside', () => {
+        const { fixture, element, plan, moved } = setup(roomWith([x, bottom, top]));
+        const stacked = vi.fn();
+        plan.containerStacked.subscribe(stacked);
+        const group = startDrag(element, 2800, 1200); // corner (2700, 1100) overlaps the stack; the pointer does not
+        fixture.detectChanges();
+        expect(shadowClass(element)).toBe('shadow-invalid');
+        expect(shadowText(element)).toBe('Overlaps');
+        pointer(group, 'pointerup', 2800, 1200);
+        expect(stacked).not.toHaveBeenCalled();
+        expect(moved).not.toHaveBeenCalled();
+      });
+
+      it('is cancelled with Escape', () => {
+        const { fixture, element, plan } = setup(roomWith([x, bottom, top]));
+        const stacked = vi.fn();
+        plan.containerStacked.subscribe(stacked);
+        const group = startDrag(element, 2200, 1200);
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+        fixture.detectChanges();
+        expect(shadow(element)).toBeNull();
+        pointer(group, 'pointerup', 2200, 1200);
+        expect(stacked).not.toHaveBeenCalled();
+      });
+
+      it('is dropped when the browser cancels the gesture', () => {
+        const { fixture, element, plan } = setup(roomWith([x, bottom, top]));
+        const stacked = vi.fn();
+        plan.containerStacked.subscribe(stacked);
+        const group = startDrag(element, 2200, 1200, 'touch');
+        pointer(group, 'pointercancel', 2200, 1200, 'touch');
+        fixture.detectChanges();
+        expect(shadow(element)).toBeNull();
+        expect(stacked).not.toHaveBeenCalled();
+      });
+
+      it('stacks a container on one that is alone, giving level 2', () => {
+        const other = { ...box('Other', 2000, 1000), id: 'other' };
+        const { fixture, element } = setup(roomWith([x, other]));
+        startDrag(element, 2200, 1200);
+        fixture.detectChanges();
+        expect(shadowLines(element)).toEqual(['Stack on Other', 'Level 2']);
+      });
+    });
+
+    describe('dropping a new container from the toolbox on a stack', () => {
+      it('shows the blue shadow in the place of the stack', () => {
+        const { fixture, element } = setup(roomWith([bottom, top]));
+        dragTo(element, 2200, 1200);
+        fixture.detectChanges();
+        expect(shadowClass(element)).toBe('shadow-stack');
+        expect(shadowLines(element)).toEqual(['Stack on Top', 'Level 3']);
+        const rect = element.querySelector('.shadow-rect');
+        expect([num(rect, 'x'), num(rect, 'y')]).toEqual([2000, 1000]);
+      });
+
+      it('emits containerAdded with the id of the container on top, and the place of the stack', () => {
+        const { fixture, element, added } = setup(roomWith([bottom, top]));
+        dragTo(element, 2200, 1200);
+        pointer(tile(element), 'pointerup', 2200, 1200);
+        fixture.detectChanges();
+        expect(added).toHaveBeenCalledTimes(1);
+        expect(added).toHaveBeenCalledWith({
+          typeId: TOUGH_BOX_27_GAL.id,
+          xMm: 2000,
+          yMm: 1000,
+          stackOnto: 'top',
+        });
+      });
+
+      it('is a normal drop, without stackOnto, when the pointer is not on a container', () => {
+        const { element, added } = setup(roomWith([bottom, top]));
+        dragTo(element, 800, 600);
+        pointer(tile(element), 'pointerup', 800, 600);
+        expect(added).toHaveBeenCalledTimes(1);
+        expect(added.mock.calls[0][0].stackOnto).toBeUndefined();
+      });
+
+      it('stays red when the footprints overlap but the pointer is not on the container', () => {
+        const { fixture, element, added } = setup(roomWith([bottom, top]));
+        dragTo(element, 2900, 1200); // the shadow (x 2512..3287) overlaps the stack; the pointer does not
+        fixture.detectChanges();
+        expect(shadowClass(element)).toBe('shadow-invalid');
+        pointer(tile(element), 'pointerup', 2900, 1200);
+        expect(added).not.toHaveBeenCalled();
+      });
+
+      it('does not stack when a tile is tapped, even with a container selected: it takes the first free spot', () => {
+        const { fixture, element, added, plan } = setup(roomWith([bottom, top]));
+        plan.selectedId.set('top');
+        fixture.detectChanges();
+        tile(element).click();
+        expect(added).toHaveBeenCalledTimes(1);
+        expect(added).toHaveBeenCalledWith({ typeId: TOUGH_BOX_27_GAL.id, xMm: 0, yMm: 0 });
+        expect(added.mock.calls[0][0].stackOnto).toBeUndefined();
+      });
     });
   });
 

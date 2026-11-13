@@ -1,6 +1,6 @@
-# SorterHome — Requirements (v0.9)
+# SorterHome — Requirements (v0.10)
 
-Last updated: 2026-11-08
+Last updated: 2026-11-13
 Status: Requirements for v1 are agreed. Items marked **Open** still need a decision from the project owner.
 
 ## 1. Purpose
@@ -52,17 +52,25 @@ localStorage holds about 5 MB in total and one phone photo weighs 2 to 5 MB, so 
 ### Rooms and plan
 - FR-1: Create, rename and delete rooms. The room name is required, at most 60 characters, and two rooms may have the same name.
 - FR-1b: A new room starts at **12 ft × 10 ft** (3658 × 3048 mm). Minimum size **4 ft × 4 ft** (1219 × 1219 mm). Maximum size **100 ft × 100 ft** (30480 × 30480 mm).
-- FR-2: Resize a room by dragging its right edge, its bottom edge or its bottom-right corner (the top-left corner stays fixed). The size changes in 1 in steps, stays between 4 ft and 100 ft, shows a live size readout while dragging, and is saved when the pointer is released. Works with mouse and touch. An edge cannot be dragged past the containers inside the room: **to be implemented in phase 2, once containers exist**.
+- FR-2: Resize a room by dragging its right edge, its bottom edge or its bottom-right corner (the top-left corner stays fixed). The size changes in 1 in steps, stays between 4 ft and 100 ft, shows a live size readout while dragging, and is saved when the pointer is released. Works with mouse and touch. An edge cannot be dragged past the containers inside the room: it stops at them (see FR-4c).
 - FR-3: Show a semi-transparent grid with 1 ft squares.
 
 ### Containers
 - FR-4: Add a container from a toolbox at the bottom of the plan. The toolbox shows each container type as a square tile with a drawn SVG icon (top view of the box). The user drags a tile onto the plan; the container appears at its real size, with the **center under the pointer**, and its top-left corner snapped to 1 in. While dragging, a **shadow of the container footprint** shows where it will land: **green** when the place is valid and **red** when it is not (it would leave the room or overlap another container). The state must not rely on color alone. Dropping on red creates nothing.
 - FR-4b: Tapping or pressing a toolbox tile places the container in the first free spot, scanning from the top-left corner in 1 ft steps. If there is no free space, a message says so. This also serves touch screens and keyboards.
-- FR-4c: A container can never leave the room walls. Until stacking exists (FR-7), any overlap between containers is blocked. A room cannot be resized smaller than the containers inside it (the edge stops at the containers).
+- FR-4c: A container can never leave the room walls. Containers cannot overlap, except by stacking (FR-7): any other overlap is blocked. A room cannot be resized smaller than the containers inside it (the edge stops at the containers). A stack counts as one footprint.
 - FR-5: Move a container. While dragging, it snaps to 1 in steps so it is easy to align.
 - FR-6: Rotate a container 90°. Rotation swaps its length and width on the plan.
-- FR-7: Stack containers by dropping one onto another, view the stack order, and change it.
-- FR-8: Select a container to open its panel: on the **right** of the plan on wide screens and **below** the plan on narrow screens (phones). The panel shows the container name (editable) and a delete button with an inline confirmation (no browser dialogs). Rotate (FR-6) and Add item (phase 3) are added to this panel in their own steps.
+- FR-7: Stack containers by dropping one onto another, view the stack order, and change it. A stack is a group of containers with the same position and rotation; a container alone is a stack of one. The rules are:
+  - **Dropping:** a container is stacked when the **pointer** is inside the footprint of another container at the moment of the drop, both for a new container dragged from the toolbox and for an existing container being moved. The dropped container takes the position and rotation of that stack and goes **on top**. There is no height limit. Levels are counted from the bottom: level 1 is the bottom container. Tapping a toolbox tile never stacks (FR-4b). If the pointer is not inside another container but the footprints overlap, the drop is red and nothing happens (FR-4).
+  - **Shadow:** while dragging, the shadow shows the aligned place with its own state (blue, dotted outline) and the text "Stack on <name>" and "Level N", where N is the level the container would take. The state never relies on color alone.
+  - **Plan:** only the top container of a stack is drawn, with a badge showing the number of containers (for example "x3"). Clicking a stack selects its top container.
+  - **Moving:** dragging a stack moves the whole stack. Dropping a stack of more than one container onto another container is blocked (red, with an explanatory text). Merging stacks is a possible future improvement.
+  - **Rotating:** rotating a container that is in a stack rotates the whole stack around the center of its footprint, with the rule of FR-6: if it does not fit, the rotation is blocked and the message "Not enough space to rotate" is shown.
+  - **Panel:** for a container in a stack, the panel lists the stack from top to bottom with the level of each container, and highlights the selected one. Clicking an item selects that container: this is how the hidden lower containers are reached. The order is changed with the "Move up" and "Move down" buttons, not by dragging. The "Remove from stack" button takes the selected container out of the stack and puts it, with the rotation of the stack, in the first free spot (as in FR-4b); if there is none, the "no free space" message is shown and nothing changes.
+  - **Deleting** a container in the middle of a stack closes the gap and renumbers the levels.
+  - Only one container type exists, so there are no rules for stacking containers of different sizes (see section 7).
+- FR-8: Select a container to open its panel: on the **right** of the plan on wide screens and **below** the plan on narrow screens (phones). The panel shows the container name (editable), the stack list and its buttons when the container is in a stack with others (FR-7), a "Rotate 90°" button (FR-6) and a delete button with an inline confirmation (no browser dialogs). Add item (phase 3) is added to this panel in its own step.
 
 ### Items
 - FR-9: Add items to a container with the "Add item" button (name, quantity, optional description, optional category, optional photo).
@@ -137,7 +145,7 @@ The room plan is drawn with SVG. Reasons: the plan has tens of objects (not thou
 2. Containers on the plan:
    - 2.1 Container model, SVG toolbox, drag with green/red shadow, tap to add, name panel, delete, room cannot shrink under containers — **done**
    - 2.2 Move containers with 1 in snap, rotate 90° — **done**
-   - 2.3 Stacking, stack order
+   - 2.3 Stacking, stack order — **done**
 3. Items: name, quantity, description, category, photo (the photo comes as its own step, with IndexedDB)
 4. Search and filters
 5. Deploy to the internet with CI

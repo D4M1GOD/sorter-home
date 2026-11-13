@@ -9,22 +9,15 @@ import {
   viewChild,
 } from '@angular/core';
 import { ContainerToolbox, ToolboxDrag } from '../container-toolbox/container-toolbox';
+import { grabOffsetOf, moveTopLeft, PlanPoint } from '../core/container-move';
 import {
-  grabOffsetOf,
-  moveTopLeft,
-  placementProblemIgnoring,
-  PlanPoint,
-} from '../core/container-move';
-import {
-  containerRect,
   firstFreeSpot,
   footprintOf,
   minRoomSizeFor,
-  PlacementProblem,
-  placementProblem,
   Rect,
   snapTopLeft,
 } from '../core/container-placement';
+import { DragOutcome, dragOutcome, stackOf, stacksOf } from '../core/container-stack';
 import { ContainerRotation, getContainerType, truncateLabel } from '../core/container.model';
 import { DRAG_THRESHOLD_PX } from '../core/drag';
 import { gridLinePositions } from '../core/grid';
@@ -32,26 +25,50 @@ import { Room } from '../core/room.model';
 import { ResizeHandle, resizeRoom, RoomSize } from '../core/room-resize';
 import { formatFeetInches } from '../core/units';
 
-/** Where a new container should be created: its type and top-left corner in plan millimeters. */
+/**
+ * Where a new container should be created: its type and top-left corner in plan millimeters.
+ * When it is dropped on a stack, `stackOnto` is the id of the container on top of that stack and
+ * the position is the one of the stack.
+ */
 export interface ContainerAdded {
   typeId: string;
   xMm: number;
   yMm: number;
+  stackOnto?: string;
 }
 
-/** A container the user dropped on a valid place: its id and its new top-left corner. */
+/** A container (or a whole stack) the user dropped on a valid place: its id and new corner. */
 export interface ContainerMoved {
   id: string;
   xMm: number;
   yMm: number;
 }
 
+/** A container the user dropped on a stack: its id and the id of the container on top of it. */
+export interface ContainerStacked {
+  id: string;
+  targetId: string;
+}
+
+/** The three states of the shadow. The text says the state, so it never depends on color alone. */
+type ShadowKind = 'valid' | 'invalid' | 'stack';
+
 /** The shadow shown while a tile or a container is dragged over the plan. */
 interface Shadow {
   rect: Rect;
-  valid: boolean;
-  /** Short text, so the state does not rely on color alone. */
+  kind: ShadowKind;
+  /** One or two lines of text, each with the vertical position of its middle. */
+  lines: { text: string; yMm: number }[];
+  fontSize: number;
+}
+
+/** The longest line the shadow text may have, so it fits in the footprint of the container. */
+const SHADOW_LINE_MAX_CHARS = 20;
+
+/** The badge with the number of containers of a stack, drawn in the corner of the top one. */
+interface StackBadge {
   text: string;
+  rect: Rect;
   fontSize: number;
 }
 
@@ -63,16 +80,25 @@ interface LidLine {
   y2: number;
 }
 
-/** Everything the template needs to draw one container. */
+/**
+ * Everything the template needs to draw one stack: only its top container is drawn, with a badge
+ * when the stack has more than one container.
+ */
 interface ContainerView {
+  /** Id of the container on top of the stack. */
   id: string;
+  /** Ids of all the containers of the stack, also the hidden ones. */
+  memberIds: string[];
   name: string;
   label: string;
+  /** Text for assistive technology: the name, and the size of the stack when it has several. */
+  description: string;
   rect: Rect;
   cornerRadius: number;
   lid: Rect;
   lidLines: LidLine[];
   fontSize: number;
+  badge: StackBadge | null;
 }
 
 /** State of a drag that is in progress. */
@@ -120,8 +146,11 @@ export class RoomPlan {
   /** Emits where a new container should go (a valid drop, or a tap on a toolbox tile). It does not save anything. */
   readonly containerAdded = output<ContainerAdded>();
 
-  /** Emits a container dropped on a valid place. It does not save anything. */
+  /** Emits a container (or a whole stack) dropped on a valid place. It does not save anything. */
   readonly containerMoved = output<ContainerMoved>();
+
+  /** Emits a container dropped on top of a stack. It does not save anything. */
+  readonly containerStacked = output<ContainerStacked>();
 
   private readonly svg = viewChild.required<ElementRef<SVGSVGElement>>('plan');
 
@@ -178,10 +207,16 @@ export class RoomPlan {
   /** The room cannot be resized smaller than the containers inside it. */
   private readonly minSize = computed(() => minRoomSizeFor(this.room().containers));
 
-  /** Containers at their real size, with the extra numbers the template needs to draw them. */
+  /**
+   * One view per stack, at the real size of its containers, with the extra numbers the template
+   * needs to draw it. Only the container on top is drawn: the ones under it are hidden, and the
+   * user reaches them from the stack list in the panel.
+   */
   protected readonly containerViews = computed<ContainerView[]>(() =>
-    this.room().containers.map((container) => {
-      const rect = containerRect(container);
+    stacksOf(this.room().containers).map((stack) => {
+      const container = stack.top;
+      const rect = stack.rect;
+      const size = stack.members.length;
       // The short side does not change when the container is rotated, so the text size, the lid
       // margin and the corner radius are computed from it: a rotated container looks like the
       // original, turned.
@@ -206,18 +241,46 @@ export class RoomPlan {
         const y = lid.yMm + lid.depthMm * fraction;
         return { x1: lid.xMm, y1: y, x2: lid.xMm + lid.widthMm, y2: y };
       });
+      // "x3" in the top-right corner of the top container. It is text, so it does not rely on color.
+      const badgeFontSize = shortSide * 0.13;
+      const badgeText = `x${size}`;
+      const badgeWidth = badgeFontSize * (0.62 * badgeText.length + 0.9);
+      const badgeHeight = badgeFontSize * 1.5;
+      const badgeMargin = shortSide * 0.04;
+      const badge: StackBadge | null =
+        size > 1
+          ? {
+              text: badgeText,
+              fontSize: badgeFontSize,
+              rect: {
+                xMm: rect.xMm + rect.widthMm - badgeMargin - badgeWidth,
+                yMm: rect.yMm + badgeMargin,
+                widthMm: badgeWidth,
+                depthMm: badgeHeight,
+              },
+            }
+          : null;
       return {
         id: container.id,
+        memberIds: stack.members.map((member) => member.id),
         name: container.name,
         label: truncateLabel(container.name, maxChars),
+        description: size > 1 ? `${container.name}, stack of ${size}` : container.name,
         rect,
         cornerRadius: shortSide * 0.06,
         lid,
         lidLines,
         fontSize,
+        badge,
       };
     }),
   );
+
+  /** True when the selected container is in the stack of this view (it may be a hidden one). */
+  protected isSelected(view: ContainerView): boolean {
+    const selected = this.selectedId();
+    return selected !== null && view.memberIds.includes(selected);
+  }
 
   /** Shadow of the container being dragged from the toolbox. It is null when nothing is dragged. */
   protected readonly shadow = signal<Shadow | null>(null);
@@ -230,11 +293,18 @@ export class RoomPlan {
   }
 
   protected onToolboxDragEnd(drag: ToolboxDrag): void {
-    const shadow = this.shadowFor(drag);
+    const outcome = this.toolboxOutcomeFor(drag);
     this.shadow.set(null);
     // Dropping on a red shadow creates nothing.
-    if (shadow?.valid) {
-      this.containerAdded.emit({ typeId: drag.typeId, xMm: shadow.rect.xMm, yMm: shadow.rect.yMm });
+    if (outcome?.kind === 'stack') {
+      this.containerAdded.emit({
+        typeId: drag.typeId,
+        xMm: outcome.rect.xMm,
+        yMm: outcome.rect.yMm,
+        stackOnto: outcome.target.top.id,
+      });
+    } else if (outcome?.kind === 'place' && outcome.problem === null) {
+      this.containerAdded.emit({ typeId: drag.typeId, xMm: outcome.rect.xMm, yMm: outcome.rect.yMm });
     }
   }
 
@@ -319,23 +389,23 @@ export class RoomPlan {
     if (!move || event.pointerId !== move.pointerId) {
       return;
     }
-    const shadow = move.dragging && !move.cancelled ? this.moveShadowFor(move, event) : null;
+    const outcome = move.dragging && !move.cancelled ? this.moveOutcomeFor(move, event) : null;
     const container = this.room().containers.find((c) => c.id === move.containerId);
     this.skipNextClick = move.dragging;
     this.endMove();
     // Dropping on red, or on the same place, changes nothing: the container stays where it was.
     // If the container was rotated or deleted during the drag, the move is dropped too.
-    if (
-      shadow?.valid &&
-      container &&
-      container.rotation === move.rotation &&
-      (shadow.rect.xMm !== container.xMm || shadow.rect.yMm !== container.yMm)
+    if (!outcome || !container || container.rotation !== move.rotation) {
+      return;
+    }
+    if (outcome.kind === 'stack') {
+      this.containerStacked.emit({ id: container.id, targetId: outcome.target.top.id });
+    } else if (
+      outcome.kind === 'place' &&
+      outcome.problem === null &&
+      (outcome.rect.xMm !== container.xMm || outcome.rect.yMm !== container.yMm)
     ) {
-      this.containerMoved.emit({
-        id: container.id,
-        xMm: shadow.rect.xMm,
-        yMm: shadow.rect.yMm,
-      });
+      this.containerMoved.emit({ id: container.id, xMm: outcome.rect.xMm, yMm: outcome.rect.yMm });
     }
   }
 
@@ -365,10 +435,20 @@ export class RoomPlan {
     this.movingId.set(null);
   }
 
-  /** Where the dragged container would land (grab offset kept, corner snapped to whole inches). */
+  /** The shadow for the container being dragged: where it would land and what would happen. */
   private moveShadowFor(move: ActiveMove, event: PointerEvent): Shadow | null {
+    const outcome = this.moveOutcomeFor(move, event);
+    return outcome ? this.shadowOf(outcome) : null;
+  }
+
+  /**
+   * What would happen if the container (and its whole stack, which moves together) were dropped
+   * now. The corner keeps the grab offset and snaps to whole inches. The rules are in `dragOutcome`.
+   */
+  private moveOutcomeFor(move: ActiveMove, event: PointerEvent): DragOutcome | null {
     const pointer = this.toPlanMm(event.clientX, event.clientY);
-    const container = this.room().containers.find((c) => c.id === move.containerId);
+    const room = this.room();
+    const container = room.containers.find((c) => c.id === move.containerId);
     if (!pointer || !container) {
       return null;
     }
@@ -376,8 +456,10 @@ export class RoomPlan {
       ...moveTopLeft(pointer, move.grabOffset),
       ...footprintOf(container.typeId, container.rotation),
     };
-    const room = this.room();
-    return this.shadowOf(rect, placementProblemIgnoring(rect, container.id, room, room.containers));
+    const draggedIds = (stackOf(room.containers, container.id)?.members ?? [container]).map(
+      (member) => member.id,
+    );
+    return dragOutcome({ pointer, rect, draggedIds, room, containers: room.containers });
   }
 
   protected onContainerKey(id: string, event: Event): void {
@@ -393,8 +475,14 @@ export class RoomPlan {
     }
   }
 
-  /** Where the dragged container would land, and whether that place is valid. */
+  /** The shadow for the container dragged from the toolbox: where it would land and what would happen. */
   private shadowFor(drag: ToolboxDrag): Shadow | null {
+    const outcome = this.toolboxOutcomeFor(drag);
+    return outcome ? this.shadowOf(outcome) : null;
+  }
+
+  /** What would happen if the tile were dropped now (the center of the container under the pointer). */
+  private toolboxOutcomeFor(drag: ToolboxDrag): DragOutcome | null {
     const pointer = this.toPlanMm(drag.clientX, drag.clientY);
     if (!pointer || !getContainerType(drag.typeId)) {
       return null;
@@ -402,16 +490,52 @@ export class RoomPlan {
     const footprint = footprintOf(drag.typeId);
     const rect: Rect = { ...snapTopLeft(pointer, footprint), ...footprint };
     const room = this.room();
-    return this.shadowOf(rect, placementProblem(rect, room, room.containers));
+    return dragOutcome({ pointer, rect, draggedIds: [], room, containers: room.containers });
   }
 
-  /** The shadow for a place: green when it has no problem, red (with text) when it has one. */
-  private shadowOf(rect: Rect, problem: PlacementProblem | null): Shadow {
+  /**
+   * The shadow for an outcome. Green: a valid place. Red (dashed, with a cross): the place is
+   * outside the room or overlaps, or a stack of several containers was dropped on a container.
+   * Blue (dotted): the container would go on top of a stack, in the place of that stack.
+   * Every state has its own text, so the meaning never depends on color or outline alone.
+   */
+  private shadowOf(outcome: DragOutcome): Shadow {
+    if (outcome.kind === 'stack') {
+      const prefix = 'Stack on ';
+      const name = truncateLabel(
+        outcome.target.top.name,
+        Math.max(1, SHADOW_LINE_MAX_CHARS - prefix.length),
+      );
+      return this.shadowWith(outcome.rect, 'stack', [`${prefix}${name}`, `Level ${outcome.level}`]);
+    }
+    if (outcome.kind === 'blocked') {
+      return this.shadowWith(outcome.rect, 'invalid', ["Can't place a stack", 'on a container']);
+    }
+    if (outcome.problem === null) {
+      return this.shadowWith(outcome.rect, 'valid', ['Valid']);
+    }
+    const text = outcome.problem === 'overlap' ? 'Overlaps' : 'Outside room';
+    return this.shadowWith(outcome.rect, 'invalid', [text]);
+  }
+
+  /** Lays out the text lines in the middle of the shadow, small enough to fit its width. */
+  private shadowWith(rect: Rect, kind: ShadowKind, texts: string[]): Shadow {
+    const longest = Math.max(...texts.map((text) => text.length));
+    // Rough width of a character is 0.55 of the font size. The text may use 92% of the width.
+    const fontSize = Math.min(
+      Math.min(rect.widthMm, rect.depthMm) * 0.15,
+      (rect.widthMm * 0.92) / (longest * 0.55),
+    );
+    const lineHeight = fontSize * 1.25;
+    const middle = rect.yMm + rect.depthMm / 2;
     return {
       rect,
-      valid: problem === null,
-      text: problem === null ? 'Valid' : problem === 'overlap' ? 'Overlaps' : 'Outside room',
-      fontSize: Math.min(rect.widthMm, rect.depthMm) * 0.15,
+      kind,
+      fontSize,
+      lines: texts.map((text, i) => ({
+        text,
+        yMm: middle + (i - (texts.length - 1) / 2) * lineHeight,
+      })),
     };
   }
 

@@ -1,0 +1,32 @@
+<section class="stack" aria-labelledby="container-stack-title">
+  <h3 id="container-stack-title">Stack of {{ members().length }}</h3>
+
+  <ol class="levels">
+    @for (row of rows(); track row.id) {
+      <li>
+        <button
+          type="button"
+          class="level"
+          [class.current]="row.current"
+          [attr.aria-current]="row.current ? 'true' : null"
+          (click)="selected.emit(row.id)"
+        >
+          @if (row.current) {
+            <span class="level-mark" aria-hidden="true">▸</span>&ngsp;
+          }
+          <span class="level-number">Level {{ row.level }}</span>&ngsp;<span class="level-name">{{ row.name }}</span>
+        </button>
+      </li>
+    }
+  </ol>
+
+  <div class="actions">
+    <button class="button" type="button" [attr.aria-disabled]="atTop()" (click)="moveUp()">
+      Move up
+    </button>
+    <button class="button" type="button" [attr.aria-disabled]="atBottom()" (click)="moveDown()">
+      Move down
+    </button>
+    <button class="button" type="button" (click)="removed.emit()">Remove from stack</button>
+  </div>
+</section>

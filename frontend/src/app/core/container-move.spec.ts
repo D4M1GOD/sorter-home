@@ -72,33 +72,41 @@ describe('container move', () => {
   describe('placementProblemIgnoring', () => {
     it('does not count the ignored container, so it can stay on its own place', () => {
       const a = box(500, 500);
-      expect(placementProblemIgnoring(containerRect(a), a.id, room, [a])).toBeNull();
+      expect(placementProblemIgnoring(containerRect(a), [a.id], room, [a])).toBeNull();
+    });
+
+    it('can leave out several containers, like all the containers of a stack that moves together', () => {
+      const a = box(500, 500);
+      const b = { ...box(500, 500), stackPosition: 1 };
+      expect(placementProblemIgnoring(containerRect(a), [a.id, b.id], room, [a, b])).toBeNull();
+      expect(placementProblemIgnoring(containerRect(a), [a.id], room, [a, b])).toBe('overlap');
+      expect(placementProblemIgnoring(containerRect(a), [], room, [a, b])).toBe('overlap');
     });
 
     it('allows moving a little over the old place of the same container', () => {
       const a = box(500, 500);
       const moved = { xMm: 600, yMm: 500, widthMm: W, depthMm: D }; // overlaps a's old place
-      expect(placementProblemIgnoring(moved, a.id, room, [a])).toBeNull();
+      expect(placementProblemIgnoring(moved, [a.id], room, [a])).toBeNull();
     });
 
     it('still reports an overlap with any other container', () => {
       const a = box(500, 500);
       const b = box(2000, 500);
       const onB = { xMm: 2100, yMm: 500, widthMm: W, depthMm: D };
-      expect(placementProblemIgnoring(onB, a.id, room, [a, b])).toBe('overlap');
+      expect(placementProblemIgnoring(onB, [a.id], room, [a, b])).toBe('overlap');
     });
 
     it('still reports "outside" when the place leaves the room', () => {
       const a = box(500, 500);
       const out = { xMm: room.widthMm - W + 1, yMm: 500, widthMm: W, depthMm: D };
-      expect(placementProblemIgnoring(out, a.id, room, [a])).toBe('outside');
+      expect(placementProblemIgnoring(out, [a.id], room, [a])).toBe('outside');
     });
 
     it('accepts a container right next to another one', () => {
       const a = box(0, 0);
       const b = box(2000, 0);
       const next = { xMm: W, yMm: 0, widthMm: W, depthMm: D };
-      expect(placementProblemIgnoring(next, b.id, room, [a, b])).toBeNull();
+      expect(placementProblemIgnoring(next, [b.id], room, [a, b])).toBeNull();
     });
   });
 
@@ -168,29 +176,29 @@ describe('container move', () => {
       it('fits when there is free space around it', () => {
         const a = box(1000, 1000);
         const rotated = rotatedContainer(a);
-        expect(placementProblemIgnoring(containerRect(rotated), a.id, room, [a])).toBeNull();
+        expect(placementProblemIgnoring(containerRect(rotated), [a.id], room, [a])).toBeNull();
       });
 
       it('does not fit against the top wall (the corner would go above it)', () => {
         const a = box(1000, 0);
         const rotated = rotatedContainer(a);
-        expect(placementProblemIgnoring(containerRect(rotated), a.id, room, [a])).toBe('outside');
+        expect(placementProblemIgnoring(containerRect(rotated), [a.id], room, [a])).toBe('outside');
       });
 
       it('does not fit against the bottom wall', () => {
         const a = box(1000, room.depthMm - D);
         const rotated = rotatedContainer(a);
-        expect(placementProblemIgnoring(containerRect(rotated), a.id, room, [a])).toBe('outside');
+        expect(placementProblemIgnoring(containerRect(rotated), [a.id], room, [a])).toBe('outside');
       });
 
       it('fits against the side walls, because the footprint gets narrower', () => {
         const left = box(0, 1000);
         const right = box(room.widthMm - W, 1000);
         expect(
-          placementProblemIgnoring(containerRect(rotatedContainer(left)), left.id, room, [left]),
+          placementProblemIgnoring(containerRect(rotatedContainer(left)), [left.id], room, [left]),
         ).toBeNull();
         expect(
-          placementProblemIgnoring(containerRect(rotatedContainer(right)), right.id, room, [right]),
+          placementProblemIgnoring(containerRect(rotatedContainer(right)), [right.id], room, [right]),
         ).toBeNull();
       });
 
@@ -198,7 +206,7 @@ describe('container move', () => {
         const a = box(1000, 1000);
         const below = box(1000, 1000 + D); // touches a from below
         const rotated = rotatedContainer(a);
-        expect(placementProblemIgnoring(containerRect(rotated), a.id, room, [a, below])).toBe(
+        expect(placementProblemIgnoring(containerRect(rotated), [a.id], room, [a, below])).toBe(
           'overlap',
         );
       });

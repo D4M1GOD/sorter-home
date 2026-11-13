@@ -26,14 +26,21 @@
     </div>
   </form>
 
+  @if (stack().length > 1) {
+    <app-container-stack
+      [members]="stack()"
+      [selectedId]="container().id"
+      (selected)="stackItemSelected.emit($event)"
+      (movedUp)="movedUp.emit()"
+      (movedDown)="movedDown.emit()"
+      (removed)="removedFromStack.emit()"
+    />
+  }
+
   <div class="rotate">
     <button class="button" type="button" (click)="rotated.emit()">Rotate 90°</button>
     <!-- Always in the page, empty when there is nothing to say, so screen readers announce changes. -->
-    <p class="rotate-notice" role="status">
-      @if (rotateBlocked()) {
-        Not enough space to rotate
-      }
-    </p>
+    <p class="notice" role="status">{{ notice() }}</p>
   </div>
 
   @if (confirming()) {

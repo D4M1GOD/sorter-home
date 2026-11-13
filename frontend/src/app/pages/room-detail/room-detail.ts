@@ -4,11 +4,20 @@ import { apply, form, FormField, submit } from '@angular/forms/signals';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { map } from 'rxjs';
 import { ContainerPanel } from '../../container-panel/container-panel';
+import { stackOf } from '../../core/container-stack';
 import { createContainer, nextContainerName } from '../../core/container.model';
 import { roomNameSchema } from '../../core/room-name-schema';
 import { RoomSize } from '../../core/room-resize';
 import { RoomStore } from '../../core/room-store';
-import { ContainerAdded, ContainerMoved, RoomPlan } from '../../room-plan/room-plan';
+import {
+  ContainerAdded,
+  ContainerMoved,
+  ContainerStacked,
+  RoomPlan,
+} from '../../room-plan/room-plan';
+
+const NOT_ENOUGH_SPACE_TO_ROTATE = 'Not enough space to rotate';
+const NO_FREE_SPACE = 'There is no free space for another container in this room.';
 
 /** True when the key press goes to something the user types in: the R key must not rotate then. */
 function isTypingTarget(target: EventTarget | null): boolean {
@@ -56,13 +65,20 @@ export class RoomDetail {
     return this.room()?.containers.find((container) => container.id === id);
   });
 
+  /** The stack of the selected container, from the bottom to the top (empty if none is selected). */
+  protected readonly selectedStack = computed(() => {
+    const id = this.selectedId();
+    const room = this.room();
+    return id === null || !room ? [] : (stackOf(room.containers, id)?.members ?? []);
+  });
+
   /**
-   * True after a rotation was blocked for lack of space. It is cleared when another container is
-   * selected, and after a rotation or a move that worked.
+   * The message shown in the panel, for example after a rotation was blocked for lack of space.
+   * It is cleared when another container is selected, and after any action that worked.
    */
-  protected readonly rotateBlocked = linkedSignal<string | null, boolean>({
+  protected readonly notice = linkedSignal<string | null, string>({
     source: () => this.selectedId(),
-    computation: () => false,
+    computation: () => '',
   });
 
   /** Saves the final size when the user releases a resize handle on the plan. */
@@ -85,28 +101,65 @@ export class RoomDetail {
       added.xMm,
       added.yMm,
     );
-    if (this.store.addContainer(room.id, container)) {
+    // Dropped on a stack: the container goes on top of it, in the position of the stack.
+    const saved = added.stackOnto
+      ? this.store.addContainerOnStack(room.id, container, added.stackOnto)
+      : this.store.addContainer(room.id, container);
+    if (saved) {
       this.selectedId.set(container.id);
     }
   }
 
-  /** Saves a container dropped on a valid place. The store checks the place again. */
+  /** Saves a container (or a whole stack) dropped on a valid place. The store checks the place again. */
   protected onContainerMoved(moved: ContainerMoved): void {
     const room = this.room();
     if (room && this.store.moveContainer(room.id, moved.id, moved.xMm, moved.yMm)) {
-      this.rotateBlocked.set(false);
+      this.notice.set('');
+    }
+  }
+
+  /** Puts a container on top of a stack and selects it, so its panel shows the stack list. */
+  protected onContainerStacked(stacked: ContainerStacked): void {
+    const room = this.room();
+    if (room && this.store.stackContainer(room.id, stacked.id, stacked.targetId)) {
+      this.selectedId.set(stacked.id);
+      this.notice.set('');
     }
   }
 
   /**
-   * Rotates the selected container 90°. If it does not fit, nothing changes and the panel shows
-   * a message instead.
+   * Rotates the selected container 90° (the whole stack, if it is in one). If it does not fit,
+   * nothing changes and the panel shows a message instead.
    */
   protected rotateSelected(): void {
     const room = this.room();
     const container = this.selectedContainer();
     if (room && container) {
-      this.rotateBlocked.set(!this.store.rotateContainer(room.id, container.id));
+      const rotated = this.store.rotateContainer(room.id, container.id);
+      this.notice.set(rotated ? '' : NOT_ENOUGH_SPACE_TO_ROTATE);
+    }
+  }
+
+  /** Moves the selected container one level up or down in its stack. */
+  protected moveSelectedInStack(direction: 'up' | 'down'): void {
+    const room = this.room();
+    const container = this.selectedContainer();
+    if (room && container) {
+      this.store.moveInStack(room.id, container.id, direction);
+      this.notice.set('');
+    }
+  }
+
+  /**
+   * Takes the selected container out of its stack and puts it in the first free spot. It stays
+   * selected. If there is no free spot, nothing changes and the panel shows a message instead.
+   */
+  protected removeSelectedFromStack(): void {
+    const room = this.room();
+    const container = this.selectedContainer();
+    if (room && container) {
+      const removed = this.store.unstackContainer(room.id, container.id);
+      this.notice.set(removed ? '' : NO_FREE_SPACE);
     }
   }
 

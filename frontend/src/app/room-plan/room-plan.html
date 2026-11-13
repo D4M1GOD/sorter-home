@@ -81,12 +81,12 @@
   @for (view of containerViews(); track view.id) {
     <g
       class="container"
-      [class.selected]="view.id === selectedId()"
+      [class.selected]="isSelected(view)"
       [class.moving]="view.id === movingId()"
       role="button"
       tabindex="0"
-      [attr.aria-label]="view.name"
-      [attr.aria-pressed]="view.id === selectedId()"
+      [attr.aria-label]="view.description"
+      [attr.aria-pressed]="isSelected(view)"
       (pointerdown)="onContainerPointerDown(view.id, $event)"
       (pointermove)="onContainerPointerMove($event)"
       (pointerup)="onContainerPointerUp($event)"
@@ -96,7 +96,7 @@
       (keydown.enter)="onContainerKey(view.id, $event)"
       (keydown.space)="onContainerKey(view.id, $event)"
     >
-      <title>{{ view.name }}</title>
+      <title>{{ view.description }}</title>
       <rect
         class="container-body"
         [attr.x]="view.rect.xMm"
@@ -129,11 +129,34 @@
         [attr.x]="view.rect.xMm + view.rect.widthMm / 2"
         [attr.y]="view.rect.yMm + view.rect.depthMm / 2"
       >{{ view.label }}</text>
+      @if (view.badge; as badge) {
+        <!-- "x3": the number of containers of the stack. It is text, so it does not rely on color. -->
+        <rect
+          class="stack-badge"
+          [attr.x]="badge.rect.xMm"
+          [attr.y]="badge.rect.yMm"
+          [attr.width]="badge.rect.widthMm"
+          [attr.height]="badge.rect.depthMm"
+          [attr.rx]="badge.rect.depthMm / 2"
+        />
+        <text
+          class="stack-badge-text"
+          text-anchor="middle"
+          [attr.font-size]="badge.fontSize"
+          [attr.x]="badge.rect.xMm + badge.rect.widthMm / 2"
+          [attr.y]="badge.rect.yMm + badge.rect.depthMm / 2"
+        >{{ badge.text }}</text>
+      }
     </g>
   }
 
   @if (shadow(); as s) {
-    <g class="shadow" [class.shadow-valid]="s.valid" [class.shadow-invalid]="!s.valid">
+    <g
+      class="shadow"
+      [class.shadow-valid]="s.kind === 'valid'"
+      [class.shadow-invalid]="s.kind === 'invalid'"
+      [class.shadow-stack]="s.kind === 'stack'"
+    >
       <rect
         class="shadow-rect"
         [attr.x]="s.rect.xMm"
@@ -141,7 +164,7 @@
         [attr.width]="s.rect.widthMm"
         [attr.height]="s.rect.depthMm"
       />
-      @if (!s.valid) {
+      @if (s.kind === 'invalid') {
         <line
           class="shadow-cross"
           [attr.x1]="s.rect.xMm"
@@ -157,13 +180,11 @@
           [attr.y2]="s.rect.yMm + s.rect.depthMm"
         />
       }
-      <text
-        class="shadow-text"
-        text-anchor="middle"
-        [attr.font-size]="s.fontSize"
-        [attr.x]="s.rect.xMm + s.rect.widthMm / 2"
-        [attr.y]="s.rect.yMm + s.rect.depthMm / 2"
-      >{{ s.text }}</text>
+      <text class="shadow-text" text-anchor="middle" [attr.font-size]="s.fontSize">
+        @for (line of s.lines; track $index) {
+          <tspan [attr.x]="s.rect.xMm + s.rect.widthMm / 2" [attr.y]="line.yMm">{{ line.text }}</tspan>
+        }
+      </text>
     </g>
   }
 

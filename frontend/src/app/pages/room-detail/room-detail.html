@@ -31,13 +31,19 @@
       (resized)="onResize($event)"
       (containerAdded)="onContainerAdded($event)"
       (containerMoved)="onContainerMoved($event)"
+      (containerStacked)="onContainerStacked($event)"
     />
     <aside class="side" aria-label="Container details">
       @if (selectedContainer(); as container) {
         <app-container-panel
           [container]="container"
-          [rotateBlocked]="rotateBlocked()"
+          [stack]="selectedStack()"
+          [notice]="notice()"
           (rotated)="rotateSelected()"
+          (stackItemSelected)="selectedId.set($event)"
+          (movedUp)="moveSelectedInStack('up')"
+          (movedDown)="moveSelectedInStack('down')"
+          (removedFromStack)="removeSelectedFromStack()"
           (renamed)="onContainerRenamed($event)"
           (deleted)="onContainerDeleted()"
         />
