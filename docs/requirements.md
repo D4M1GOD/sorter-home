@@ -1,4 +1,4 @@
-# SorterHome — Requirements (v0.8)
+# SorterHome — Requirements (v0.9)
 
 Last updated: 2026-11-08
 Status: Requirements for v1 are agreed. Items marked **Open** still need a decision from the project owner.
@@ -25,11 +25,21 @@ A web app to organize storage containers at home and know exactly what is inside
 | **Stack** | Containers can sit one on top of another. There is **no height limit**, and **order matters** (bottom → top). Dropping a container onto another one adds it to the top of that stack. |
 | **Item** | One physical object inside one container. It is tracked item by item (no layers). |
 
+### Container fields
+- Name: required, at most 60 characters, trimmed. A new container gets an automatic name (`Container 1`, `Container 2`, ...: the lowest number not already used in that room) that the user can change.
+- A container has **no photo, description or category of its own**. Those belong to its items.
+- Position, rotation and stack position (see the functional requirements).
+
 ### Item fields
+The container panel has an **"Add item"** button (phase 3). Each item has:
 - Name (required)
-- Quantity (required)
-- Category (optional)
+- Quantity (required): a whole number, **pre-filled with 1** in the form. **Open:** allowed range (proposal: 1 to 9999).
+- Description (optional): free text for details that the name does not cover, for example "USB-C cable, 2 m, white". **Open:** multi-line text with a 500 character limit; whether search also looks inside descriptions.
+- Category (optional): a single category per item, written as free text **with suggestions** taken from the categories already used. Matching ignores upper/lower case ("Navidad" and "navidad" are the same category) and a new item reuses the spelling of the existing category. **Open:** maximum length (proposal: 40), and whether categories are global across rooms (proposal: yes).
 - Photo: **optional but recommended**. Exactly one photo per item, taken with the phone camera or uploaded as a file. The UI should encourage adding one (for example a clear "Add photo" prompt on items without a photo).
+
+### Photos before the backend exists
+localStorage holds about 5 MB in total and one phone photo weighs 2 to 5 MB, so photos cannot live there. Photos are built as their own step, stored in the browser's **IndexedDB** behind a service and **reduced in size before saving**. When the backend exists, they move to Azure Blob Storage (photos saved only in the browser are not migrated).
 
 ## 4. Units of measure
 - **Storage:** every length is stored in **whole millimeters** (integers). This avoids rounding errors and keeps the data independent of the display unit.
@@ -46,14 +56,16 @@ A web app to organize storage containers at home and know exactly what is inside
 - FR-3: Show a semi-transparent grid with 1 ft squares.
 
 ### Containers
-- FR-4: Add a container from a toolbox by dragging it onto the room plan. It appears at its real size.
+- FR-4: Add a container from a toolbox at the bottom of the plan. The toolbox shows each container type as a square tile with a drawn SVG icon (top view of the box). The user drags a tile onto the plan; the container appears at its real size, with the **center under the pointer**, and its top-left corner snapped to 1 in. While dragging, a **shadow of the container footprint** shows where it will land: **green** when the place is valid and **red** when it is not (it would leave the room or overlap another container). The state must not rely on color alone. Dropping on red creates nothing.
+- FR-4b: Tapping or pressing a toolbox tile places the container in the first free spot, scanning from the top-left corner in 1 ft steps. If there is no free space, a message says so. This also serves touch screens and keyboards.
+- FR-4c: A container can never leave the room walls. Until stacking exists (FR-7), any overlap between containers is blocked. A room cannot be resized smaller than the containers inside it (the edge stops at the containers).
 - FR-5: Move a container. While dragging, it snaps to 1 in steps so it is easy to align.
 - FR-6: Rotate a container 90°. Rotation swaps its length and width on the plan.
 - FR-7: Stack containers by dropping one onto another, view the stack order, and change it.
-- FR-8: Name and delete a container.
+- FR-8: Select a container to open its panel: on the **right** of the plan on wide screens and **below** the plan on narrow screens (phones). The panel shows the container name (editable) and a delete button with an inline confirmation (no browser dialogs). Rotate (FR-6) and Add item (phase 3) are added to this panel in their own steps.
 
 ### Items
-- FR-9: Add items to a container (name, quantity, optional category, optional photo).
+- FR-9: Add items to a container with the "Add item" button (name, quantity, optional description, optional category, optional photo).
 - FR-10: Edit an item, change its quantity, and remove it.
 
 ### Search (phase after items)
@@ -122,8 +134,11 @@ The room plan is drawn with SVG. Reasons: the plan has tens of objects (not thou
 0. Setup: tools, GitHub repository, Claude project, CLAUDE.md — **done**. The Angular frontend is scaffolded (SCSS, routing, no SSR).
 1. Rooms as resizable floor plans with a 1 ft grid — **done**: plan drawing, pages, local storage and resizing by dragging.
    - Planned improvements to the plan view: zoom and pan (the view is frozen while dragging, so growing a room a lot takes several drags); resizing with the keyboard (accessibility); resize handles on the left and top edges (needs a rule for moving the containers inside, so it waits until containers exist).
-2. Containers on the plan: drag with snap, rotate, stack order
-3. Items: name, quantity, category, photo
+2. Containers on the plan:
+   - 2.1 Container model, SVG toolbox, drag with green/red shadow, tap to add, name panel, delete, room cannot shrink under containers
+   - 2.2 Move containers with 1 in snap, rotate 90°
+   - 2.3 Stacking, stack order
+3. Items: name, quantity, description, category, photo (the photo comes as its own step, with IndexedDB)
 4. Search and filters
 5. Deploy to the internet with CI
 6. QR labels
