@@ -1,4 +1,4 @@
-# SorterHome — Requirements (v0.11)
+# SorterHome — Requirements (v0.12)
 
 Last updated: 2026-11-14
 Status: Requirements for v1 are agreed. Items marked **Open** still need a decision from the project owner.
@@ -32,10 +32,10 @@ A web app to organize storage containers at home and know exactly what is inside
 
 ### Item fields
 The container panel has an **"Add item"** button (phase 3). Each item has:
-- Name (required). **Open (step 3.1):** maximum length, and whether two items in the same container may share a name.
+- Name (required): at most **60 characters**, trimmed (the same rule as room and container names). Two items in the same container may share a name.
 - Quantity (required): a whole number from **0 to 9999**, **pre-filled with 1** in the form. An item with quantity 0 stays in its container and shows the label "None left", so the user still knows where it belongs and what to restock.
 - Description (optional): free text for details that the name does not cover, for example "USB-C cable, 2 m, white". Multi-line text, at most **500 characters**. **Open (phase 4):** whether search also looks inside descriptions.
-- Category (optional): a single category per item, written as free text **with suggestions** taken from the categories already used, at most **40 characters**, trimmed. Categories are **global across rooms**. There is no separate list of categories: the suggestions come from the existing items, so a category stops being suggested when its last item is removed. Matching ignores upper/lower case ("Navidad" and "navidad" are the same category) and a new item reuses the spelling of the existing category.
+- Category (optional): a single category per item, written as free text **with suggestions** taken from the categories already used, at most **40 characters**, trimmed. Categories are **global across rooms**. There is no separate list of categories: the suggestions come from the existing items, so a category stops being suggested when its last item is removed. A saved category is trimmed and its inner runs of spaces become one space. Matching ignores upper/lower case, accents (diacritics) and repeated spaces: "Jardín", "jardin" and "Jardin" are the same category, and so are "Navidad" and "navidad". A new item reuses the spelling of the existing category.
 - Photo: **optional but recommended**. Exactly one photo per item, taken with the phone camera or uploaded as a file. The UI should encourage adding one (for example a clear "Add photo" prompt on items without a photo).
 
 ### Items that are out of their container
@@ -59,7 +59,7 @@ localStorage holds about 5 MB in total and one phone photo weighs 2 to 5 MB, so 
 
 ## 5. Functional requirements (v1)
 ### Rooms and plan
-- FR-1: Create, rename and delete rooms. The room name is required, at most 60 characters, and two rooms may have the same name.
+- FR-1: Create, rename and delete rooms. The room name is required, at most 60 characters, and two rooms may have the same name. Deleting a room deletes its containers and their items. The inline confirmation in the room list says what the room contains, with singular and plural forms: `"Garage" has 3 containers and 12 items. Delete it and everything inside? This cannot be undone.`; when no container has items: `"Garage" has 3 containers. Delete it and everything inside? This cannot be undone.`; an empty room keeps `Delete "Garage"? This cannot be undone.` The numbers are counts of containers and of items (rows), not sums of quantities.
 - FR-1b: A new room starts at **12 ft × 10 ft** (3658 × 3048 mm). Minimum size **4 ft × 4 ft** (1219 × 1219 mm). Maximum size **100 ft × 100 ft** (30480 × 30480 mm).
 - FR-2: Resize a room by dragging its right edge, its bottom edge or its bottom-right corner (the top-left corner stays fixed). The size changes in 1 in steps, stays between 4 ft and 100 ft, shows a live size readout while dragging, and is saved when the pointer is released. Works with mouse and touch. An edge cannot be dragged past the containers inside the room: it stops at them (see FR-4c).
 - FR-3: Show a semi-transparent grid with 1 ft squares.
@@ -79,10 +79,15 @@ localStorage holds about 5 MB in total and one phone photo weighs 2 to 5 MB, so 
   - **Panel:** for a container in a stack, the panel lists the stack from top to bottom with the level of each container, and highlights the selected one. Clicking an item selects that container: this is how the hidden lower containers are reached. The order is changed with the "Move up" and "Move down" buttons, not by dragging. The "Remove from stack" button takes the selected container out of the stack and puts it, with the rotation of the stack, in the first free spot (as in FR-4b); if there is none, the "no free space" message is shown and nothing changes.
   - **Deleting** a container in the middle of a stack closes the gap and renumbers the levels.
   - Only one container type exists, so there are no rules for stacking containers of different sizes (see section 7).
-- FR-8: Select a container to open its panel: on the **right** of the plan on wide screens and **below** the plan on narrow screens (phones). The panel shows the container name (editable), the stack list and its buttons when the container is in a stack with others (FR-7), a "Rotate 90°" button (FR-6) and a delete button with an inline confirmation (no browser dialogs). Deleting a container deletes its items too: when the container has items, the confirmation says how many (for example "This container has 5 items. Delete it and its items?"). Add item and the item list (phase 3) are added to this panel in their own steps.
+- FR-8: Select a container to open its panel: on the **right** of the plan on wide screens and **below** the plan on narrow screens (phones). The panel shows the container name (editable), the stack list and its buttons when the container is in a stack with others (FR-7), a "Rotate 90°" button (FR-6) and a delete button with an inline confirmation (no browser dialogs). Deleting a container deletes its items too: when the container has items, the confirmation says how many, `"Container 1" has 5 items. Delete it and its items? This cannot be undone.` (for one item: `has 1 item. Delete it and its item?`). The number is the count of items (rows), not the sum of their quantities. A container without items keeps `Delete "Container 1"? This cannot be undone.` The panel also has the items of the container (FR-9). The order of the panel is: name, stack list, Rotate 90°, items, Delete.
 
 ### Items
 - FR-9: Add items to a container with the "Add item" button (name, quantity, optional description, optional category, optional photo). The panel of the selected container lists its items.
+  - **Section:** the panel has an "Items (N)" section, where N is the number of items of the container, with the "Add item" button and then the list. The list has no scroll of its own: it grows with the page.
+  - **Form:** the form opens inside the panel, in place of the "Add item" button, with the focus on "Name"; on phones the view scrolls to the form. The quantity is a text field with a numeric keyboard: a value that is not a whole number from 0 to 9999 gives an error and nothing is rounded. The description shows a counter (for example "123/500"). The category field suggests the categories already used through a native `<datalist>`.
+  - **Adding several:** "Add" saves the item. The form stays open and clean, with the focus on "Name" and the message "Added <name>", so several items can be added in a row. "Done" or the Escape key closes the form. Selecting another container closes the form and discards what was typed.
+  - **Errors:** "Item name is required.", "Item name must have at most 60 characters.", "Quantity is required.", "Quantity must be a whole number from 0 to 9999."
+  - **List:** each row shows the name, the quantity ("Qty 3", or "None left" when it is 0), the category and the full description with its line breaks. The rows are in alphabetical order by name, ignoring upper/lower case; this is the display order only, the stored order is the order the items were added in. A container without items shows "No items yet."
 - FR-10: Edit an item, change its quantity, and remove it.
 - FR-10b: Take units of an item out of its container, put them back, or mark them as used (see "Items that are out of their container").
 
@@ -145,6 +150,7 @@ The room plan is drawn with SVG. Reasons: the plan has tens of objects (not thou
 
 - `/rooms/new` is declared before `/rooms/:id`, otherwise "new" would be read as a room id.
 - **Temporary storage:** rooms, with their containers and (from phase 3) their items, are kept in the browser's localStorage (key `sorterhome.rooms.v1`) through `RoomStore`. Stored data is validated on load and invalid entries are discarded. This storage is per browser: it is not shared across devices or people.
+- **Tolerant loading of items:** a container saved before items existed loads with an empty list. An item is discarded only when it has no usable name (missing, not text, or empty after trimming). Everything else is repaired and the item is kept: a missing or repeated id becomes a new id; a name, description or category that is too long is cut to its maximum; a quantity that is a number is rounded and kept between 0 and 9999, and one that is not a number becomes 1; a description or category that is not text becomes empty.
 - **Replacing it later:** when the backend exists, `RoomStore` is replaced by calls to the API. The routes stay the same. The pages will need loading and error states because network calls are asynchronous.
 - **Frontend conventions (Angular 22):** Signal Forms, the `@Service` decorator, lazy-loaded routes, Vitest for tests. Pages live in `src/app/pages/`, shared logic in `src/app/core/`.
 
@@ -157,7 +163,7 @@ The room plan is drawn with SVG. Reasons: the plan has tens of objects (not thou
    - 2.2 Move containers with 1 in snap, rotate 90° — **done**
    - 2.3 Stacking, stack order — **done**
 3. Items:
-   - 3.1 Item model and storage, "Add item" form (name, quantity, description, category), item list in the container panel
+   - 3.1 Item model and storage, "Add item" form (name, quantity, description, category), item list in the container panel — **done**
    - 3.2 Edit an item, change its quantity, remove it
    - 3.3 Take out, put back and used
    - 3.4 Photo (IndexedDB, reduced in size before saving, "Add photo" prompt)
@@ -173,3 +179,4 @@ The room plan is drawn with SVG. Reasons: the plan has tens of objects (not thou
 - The rename-room page shows an empty paragraph for the maximum-length error.
 - Review the short UI texts "Valid / Overlaps / Outside room".
 - Verify touch gestures on real devices (Android Chrome, iOS Safari) once the app is deployed; the browser emulation does not reproduce iOS Safari.
+- When the browser storage is full or not available, the write error is ignored: the change stays in memory, the user sees no message, and it is lost when the page is reloaded.
