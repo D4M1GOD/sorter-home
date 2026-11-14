@@ -13,6 +13,27 @@ Full requirements: @docs/requirements.md (read it before starting any task).
 - Talk to the owner in Spanish. Code, comments, commit messages and docs are in English.
 - UI text is in English.
 
+## How we work
+- Plan first. For every task, give a plan and wait for the owner's approval before writing code.
+  The plan lists: the data model changes, the files to create or change, every question or doubt
+  (with options, pros and cons, and a recommendation), the tests to write, and what the owner
+  must test by hand.
+- Stay inside the task. Do not change, clean up or reformat anything that was not discussed
+  (this includes Prettier, line endings, comments and UI texts outside the task). If you find
+  something unexpected, stop and tell the owner first.
+- Explain the "why" briefly for anything new.
+- When the work is done, run the tests and the build, then report: the files created or changed,
+  the test and build results, what you decided or were unsure about, and what the owner must
+  test by hand. Say clearly what the automated tests cannot check (real mouse and touch, layout,
+  screen readers).
+- Change docs/requirements.md only when the task asks for it. Show the diff, and keep the
+  file's line endings and its final newline.
+
+## Git
+- The owner writes every git command. Never run a command that changes the repository:
+  add, commit, switch, checkout, merge, rebase, push, pull, restore, reset, stash.
+- You may run read-only commands: status, log, diff and listing branches (with `--no-pager`).
+
 ## Stack
 - Frontend: Angular + TypeScript, in `frontend/`
 - Backend: C# ASP.NET Core Web API on .NET 10, in `backend/`
@@ -24,7 +45,19 @@ Full requirements: @docs/requirements.md (read it before starting any task).
   Never hard-code a display unit outside the formatting/parsing layer.
 - Commit messages use Conventional Commits: feat:, fix:, docs:, chore:, test:, refactor:
 - Default branch is `main`. Work on feature branches and merge through pull requests.
+- Use the words of docs/requirements.md in code and in the UI: room, container, stack, item
+  (for example "stack", never "pile").
+- Stored data is loaded tolerantly: never discard well-formed data, repair a bad field when
+  possible, and discard only what cannot be used. Store methods validate by themselves and
+  change nothing if they fail.
+- Pure logic lives in `frontend/src/app/core/` with unit tests.
+- A UI state must never rely on color alone.
+- Angular conventions for the frontend are in `frontend/CLAUDE.md`.
 
 ## Commands
-To be filled in during phase 1, when `frontend/` and `backend/` exist
-(run, test and build commands for each).
+Frontend (run from `frontend/`):
+- `npm start`: development server at http://localhost:4200
+- `ng test --watch=false`: run the unit tests once (Vitest)
+- `ng build`: production build
+
+Backend: not created yet.

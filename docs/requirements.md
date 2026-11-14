@@ -1,6 +1,6 @@
-# SorterHome — Requirements (v0.10)
+# SorterHome — Requirements (v0.12)
 
-Last updated: 2026-11-13
+Last updated: 2026-11-14
 Status: Requirements for v1 are agreed. Items marked **Open** still need a decision from the project owner.
 
 ## 1. Purpose
@@ -23,7 +23,7 @@ A web app to organize storage containers at home and know exactly what is inside
 | **Grid** | A semi-transparent guide drawn over the room. Each square is **1 ft × 1 ft**. It is a visual ruler: containers are not forced to fill whole squares. |
 | **Container** | A physical box placed on the room plan, drawn at its **real footprint**, so a bigger container takes up more of the plan. It has a name, a position, a rotation and a stack position. v1 type: **Tough Box 27 gal**, outside dimensions 30.5 × 20.5 × 14.25 in (≈ 77.5 × 52 × 36 cm), about 2.5 × 1.7 grid squares. |
 | **Stack** | Containers can sit one on top of another. There is **no height limit**, and **order matters** (bottom → top). Dropping a container onto another one adds it to the top of that stack. |
-| **Item** | One physical object inside one container. It is tracked item by item (no layers). |
+| **Item** | One physical object inside one container. It is tracked item by item (no layers). Some or all of its units can be out of the container for a while without losing their place. |
 
 ### Container fields
 - Name: required, at most 60 characters, trimmed. A new container gets an automatic name (`Container 1`, `Container 2`, ...: the lowest number not already used in that room) that the user can change.
@@ -32,11 +32,20 @@ A web app to organize storage containers at home and know exactly what is inside
 
 ### Item fields
 The container panel has an **"Add item"** button (phase 3). Each item has:
-- Name (required)
-- Quantity (required): a whole number, **pre-filled with 1** in the form. **Open:** allowed range (proposal: 1 to 9999).
-- Description (optional): free text for details that the name does not cover, for example "USB-C cable, 2 m, white". **Open:** multi-line text with a 500 character limit; whether search also looks inside descriptions.
-- Category (optional): a single category per item, written as free text **with suggestions** taken from the categories already used. Matching ignores upper/lower case ("Navidad" and "navidad" are the same category) and a new item reuses the spelling of the existing category. **Open:** maximum length (proposal: 40), and whether categories are global across rooms (proposal: yes).
+- Name (required): at most **60 characters**, trimmed (the same rule as room and container names). Two items in the same container may share a name.
+- Quantity (required): a whole number from **0 to 9999**, **pre-filled with 1** in the form. An item with quantity 0 stays in its container and shows the label "None left", so the user still knows where it belongs and what to restock.
+- Description (optional): free text for details that the name does not cover, for example "USB-C cable, 2 m, white". Multi-line text, at most **500 characters**. **Open (phase 4):** whether search also looks inside descriptions.
+- Category (optional): a single category per item, written as free text **with suggestions** taken from the categories already used, at most **40 characters**, trimmed. Categories are **global across rooms**. There is no separate list of categories: the suggestions come from the existing items, so a category stops being suggested when its last item is removed. A saved category is trimmed and its inner runs of spaces become one space. Matching ignores upper/lower case, accents (diacritics) and repeated spaces: "Jardín", "jardin" and "Jardin" are the same category, and so are "Navidad" and "navidad". A new item reuses the spelling of the existing category.
 - Photo: **optional but recommended**. Exactly one photo per item, taken with the phone camera or uploaded as a file. The UI should encourage adding one (for example a clear "Add photo" prompt on items without a photo).
+
+### Items that are out of their container
+An item can leave its container without losing its place. This is built in step 3.3.
+- **Take out:** the user says how many units leave the container (pre-filled with all the units that are inside). The item stays in the list of its container and shows how many units are out, for example "20 of 100 out".
+- For the units that are out, the user chooses **Put back** (they return to the container) or **Used** (they will not return, so the total quantity goes down by that number).
+- Example, things that come back: "Christmas lights", quantity 4. Take out 4 shows "4 of 4 out"; in January, Put back 4.
+- Example, things that are used up: "Nails", quantity 100. Take out 20 shows "20 of 100 out"; 15 were used and 5 were left over, so Put back 5 and Used 15. The item becomes "Nails", quantity 85.
+- Editing the quantity directly (FR-10) stays available for corrections. **Open (step 3.3):** what happens to the units that are out when the quantity is edited to a lower number.
+- **Open (phase 4):** how search results show that an item is out, and a filter for the items that are out.
 
 ### Photos before the backend exists
 localStorage holds about 5 MB in total and one phone photo weighs 2 to 5 MB, so photos cannot live there. Photos are built as their own step, stored in the browser's **IndexedDB** behind a service and **reduced in size before saving**. When the backend exists, they move to Azure Blob Storage (photos saved only in the browser are not migrated).
@@ -50,7 +59,7 @@ localStorage holds about 5 MB in total and one phone photo weighs 2 to 5 MB, so 
 
 ## 5. Functional requirements (v1)
 ### Rooms and plan
-- FR-1: Create, rename and delete rooms. The room name is required, at most 60 characters, and two rooms may have the same name.
+- FR-1: Create, rename and delete rooms. The room name is required, at most 60 characters, and two rooms may have the same name. Deleting a room deletes its containers and their items. The inline confirmation in the room list says what the room contains, with singular and plural forms: `"Garage" has 3 containers and 12 items. Delete it and everything inside? This cannot be undone.`; when no container has items: `"Garage" has 3 containers. Delete it and everything inside? This cannot be undone.`; an empty room keeps `Delete "Garage"? This cannot be undone.` The numbers are counts of containers and of items (rows), not sums of quantities.
 - FR-1b: A new room starts at **12 ft × 10 ft** (3658 × 3048 mm). Minimum size **4 ft × 4 ft** (1219 × 1219 mm). Maximum size **100 ft × 100 ft** (30480 × 30480 mm).
 - FR-2: Resize a room by dragging its right edge, its bottom edge or its bottom-right corner (the top-left corner stays fixed). The size changes in 1 in steps, stays between 4 ft and 100 ft, shows a live size readout while dragging, and is saved when the pointer is released. Works with mouse and touch. An edge cannot be dragged past the containers inside the room: it stops at them (see FR-4c).
 - FR-3: Show a semi-transparent grid with 1 ft squares.
@@ -70,11 +79,17 @@ localStorage holds about 5 MB in total and one phone photo weighs 2 to 5 MB, so 
   - **Panel:** for a container in a stack, the panel lists the stack from top to bottom with the level of each container, and highlights the selected one. Clicking an item selects that container: this is how the hidden lower containers are reached. The order is changed with the "Move up" and "Move down" buttons, not by dragging. The "Remove from stack" button takes the selected container out of the stack and puts it, with the rotation of the stack, in the first free spot (as in FR-4b); if there is none, the "no free space" message is shown and nothing changes.
   - **Deleting** a container in the middle of a stack closes the gap and renumbers the levels.
   - Only one container type exists, so there are no rules for stacking containers of different sizes (see section 7).
-- FR-8: Select a container to open its panel: on the **right** of the plan on wide screens and **below** the plan on narrow screens (phones). The panel shows the container name (editable), the stack list and its buttons when the container is in a stack with others (FR-7), a "Rotate 90°" button (FR-6) and a delete button with an inline confirmation (no browser dialogs). Add item (phase 3) is added to this panel in its own step.
+- FR-8: Select a container to open its panel: on the **right** of the plan on wide screens and **below** the plan on narrow screens (phones). The panel shows the container name (editable), the stack list and its buttons when the container is in a stack with others (FR-7), a "Rotate 90°" button (FR-6) and a delete button with an inline confirmation (no browser dialogs). Deleting a container deletes its items too: when the container has items, the confirmation says how many, `"Container 1" has 5 items. Delete it and its items? This cannot be undone.` (for one item: `has 1 item. Delete it and its item?`). The number is the count of items (rows), not the sum of their quantities. A container without items keeps `Delete "Container 1"? This cannot be undone.` The panel also has the items of the container (FR-9). The order of the panel is: name, stack list, Rotate 90°, items, Delete.
 
 ### Items
-- FR-9: Add items to a container with the "Add item" button (name, quantity, optional description, optional category, optional photo).
+- FR-9: Add items to a container with the "Add item" button (name, quantity, optional description, optional category, optional photo). The panel of the selected container lists its items.
+  - **Section:** the panel has an "Items (N)" section, where N is the number of items of the container, with the "Add item" button and then the list. The list has no scroll of its own: it grows with the page.
+  - **Form:** the form opens inside the panel, in place of the "Add item" button, with the focus on "Name"; on phones the view scrolls to the form. The quantity is a text field with a numeric keyboard: a value that is not a whole number from 0 to 9999 gives an error and nothing is rounded. The description shows a counter (for example "123/500"). The category field suggests the categories already used through a native `<datalist>`.
+  - **Adding several:** "Add" saves the item. The form stays open and clean, with the focus on "Name" and the message "Added <name>", so several items can be added in a row. "Done" or the Escape key closes the form. Selecting another container closes the form and discards what was typed.
+  - **Errors:** "Item name is required.", "Item name must have at most 60 characters.", "Quantity is required.", "Quantity must be a whole number from 0 to 9999."
+  - **List:** each row shows the name, the quantity ("Qty 3", or "None left" when it is 0), the category and the full description with its line breaks. The rows are in alphabetical order by name, ignoring upper/lower case; this is the display order only, the stored order is the order the items were added in. A container without items shows "No items yet."
 - FR-10: Edit an item, change its quantity, and remove it.
+- FR-10b: Take units of an item out of its container, put them back, or mark them as used (see "Items that are out of their container").
 
 ### Search (phase after items)
 - FR-11: Search items by name and filter by category and room. Each result shows the location: room → container → stack level.
@@ -134,7 +149,8 @@ The room plan is drawn with SVG. Reasons: the plan has tens of objects (not thou
 | anything else | Redirects to `/` |
 
 - `/rooms/new` is declared before `/rooms/:id`, otherwise "new" would be read as a room id.
-- **Temporary storage:** rooms are kept in the browser's localStorage (key `sorterhome.rooms.v1`) through `RoomStore`. Stored data is validated on load and invalid entries are discarded. This storage is per browser: it is not shared across devices or people.
+- **Temporary storage:** rooms, with their containers and (from phase 3) their items, are kept in the browser's localStorage (key `sorterhome.rooms.v1`) through `RoomStore`. Stored data is validated on load and invalid entries are discarded. This storage is per browser: it is not shared across devices or people.
+- **Tolerant loading of items:** a container saved before items existed loads with an empty list. An item is discarded only when it has no usable name (missing, not text, or empty after trimming). Everything else is repaired and the item is kept: a missing or repeated id becomes a new id; a name, description or category that is too long is cut to its maximum; a quantity that is a number is rounded and kept between 0 and 9999, and one that is not a number becomes 1; a description or category that is not text becomes empty.
 - **Replacing it later:** when the backend exists, `RoomStore` is replaced by calls to the API. The routes stay the same. The pages will need loading and error states because network calls are asynchronous.
 - **Frontend conventions (Angular 22):** Signal Forms, the `@Service` decorator, lazy-loaded routes, Vitest for tests. Pages live in `src/app/pages/`, shared logic in `src/app/core/`.
 
@@ -146,7 +162,11 @@ The room plan is drawn with SVG. Reasons: the plan has tens of objects (not thou
    - 2.1 Container model, SVG toolbox, drag with green/red shadow, tap to add, name panel, delete, room cannot shrink under containers — **done**
    - 2.2 Move containers with 1 in snap, rotate 90° — **done**
    - 2.3 Stacking, stack order — **done**
-3. Items: name, quantity, description, category, photo (the photo comes as its own step, with IndexedDB)
+3. Items:
+   - 3.1 Item model and storage, "Add item" form (name, quantity, description, category), item list in the container panel — **done**
+   - 3.2 Edit an item, change its quantity, remove it
+   - 3.3 Take out, put back and used
+   - 3.4 Photo (IndexedDB, reduced in size before saving, "Add photo" prompt)
 4. Search and filters
 5. Deploy to the internet with CI
 6. QR labels
@@ -159,3 +179,4 @@ The room plan is drawn with SVG. Reasons: the plan has tens of objects (not thou
 - The rename-room page shows an empty paragraph for the maximum-length error.
 - Review the short UI texts "Valid / Overlaps / Outside room".
 - Verify touch gestures on real devices (Android Chrome, iOS Safari) once the app is deployed; the browser emulation does not reproduce iOS Safari.
+- When the browser storage is full or not available, the write error is ignored: the change stays in memory, the user sees no message, and it is lost when the page is reloaded.

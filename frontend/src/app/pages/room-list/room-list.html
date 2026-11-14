@@ -14,7 +14,7 @@
         </div>
         @if (confirmingId() === room.id) {
           <div class="confirm" role="alert">
-            <span>Delete "{{ room.name }}"? This cannot be undone.</span>
+            <span>{{ deleteQuestion(room) }}</span>
             <button class="button button--danger" type="button" (click)="confirmDelete(room.id)">
               Yes, delete
             </button>

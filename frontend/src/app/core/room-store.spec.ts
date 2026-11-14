@@ -1,5 +1,6 @@
 import { vi } from 'vitest';
 import { createContainer, TOUGH_BOX_27_GAL } from './container.model';
+import { createItem, Item, ItemDraft } from './item.model';
 import { createRoom, ROOM_MAX_SIZE_MM, ROOM_MIN_SIZE_MM } from './room.model';
 import { ROOMS_STORAGE_KEY, RoomStore } from './room-store';
 
@@ -904,5 +905,504 @@ describe('RoomStore containers', () => {
     // A container at the exact bottom-right corner fits; one millimeter more does not.
     const { store, room } = storeWithRoom();
     expect(store.addContainer(room.id, box('Fits', room.widthMm - W, room.depthMm - D))).toBe(true);
+  });
+});
+
+describe('RoomStore items', () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  function box(name: string, xMm: number, yMm: number) {
+    return createContainer(TOUGH_BOX_27_GAL.id, name, xMm, yMm);
+  }
+
+  /** A store with one room and two containers, "Toys" and "Books", far from each other. */
+  function storeWithContainers() {
+    const store = new RoomStore();
+    const room = createRoom('Garage'); // 3658 x 3048 mm
+    store.add(room);
+    const toys = box('Toys', 0, 0);
+    const books = box('Books', 2000, 0);
+    store.addContainer(room.id, toys);
+    store.addContainer(room.id, books);
+    return { store, room, toys, books };
+  }
+
+  function item(name: string, values: Partial<ItemDraft> = {}): Item {
+    return createItem({ name, quantity: 1, description: '', category: '', ...values });
+  }
+
+  function itemsOf(store: RoomStore, roomId: string, containerId: string): Item[] {
+    return store.getById(roomId)?.containers.find((c) => c.id === containerId)?.items ?? [];
+  }
+
+  describe('addItem', () => {
+    it('adds an item to its container and to no other', () => {
+      const { store, room, toys, books } = storeWithContainers();
+      const nails = item('Nails', { quantity: 100, description: 'Box of 100', category: 'Hardware' });
+      expect(store.addItem(room.id, toys.id, nails)).toBe(true);
+      expect(itemsOf(store, room.id, toys.id)).toEqual([nails]);
+      expect(itemsOf(store, room.id, books.id)).toEqual([]);
+    });
+
+    it('keeps the items in the order they were added', () => {
+      const { store, room, toys } = storeWithContainers();
+      store.addItem(room.id, toys.id, item('Nails'));
+      store.addItem(room.id, toys.id, item('Cables'));
+      store.addItem(room.id, toys.id, item('Batteries'));
+      expect(itemsOf(store, room.id, toys.id).map((i) => i.name)).toEqual([
+        'Nails',
+        'Cables',
+        'Batteries',
+      ]);
+    });
+
+    it('allows two items with the same name in one container', () => {
+      const { store, room, toys } = storeWithContainers();
+      expect(store.addItem(room.id, toys.id, item('Cable', { description: 'USB-C' }))).toBe(true);
+      expect(store.addItem(room.id, toys.id, item('Cable', { description: 'HDMI' }))).toBe(true);
+      expect(itemsOf(store, room.id, toys.id).length).toBe(2);
+    });
+
+    it('accepts the quantities 0 and 9999', () => {
+      const { store, room, toys } = storeWithContainers();
+      expect(store.addItem(room.id, toys.id, item('Empty', { quantity: 0 }))).toBe(true);
+      expect(store.addItem(room.id, toys.id, item('Many', { quantity: 9999 }))).toBe(true);
+    });
+
+    it('saves the name and the description trimmed and the category cleaned, whatever it receives', () => {
+      const { store, room, toys } = storeWithContainers();
+      const raw: Item = {
+        id: 'item-1',
+        name: '  Nails ',
+        quantity: 5,
+        description: ' Line 1\nLine 2 ',
+        category: '  Power   tools ',
+      };
+      expect(store.addItem(room.id, toys.id, raw)).toBe(true);
+      expect(itemsOf(store, room.id, toys.id)).toEqual([
+        { id: 'item-1', name: 'Nails', quantity: 5, description: 'Line 1\nLine 2', category: 'Power tools' },
+      ]);
+    });
+
+    it('saves only the fields of an item', () => {
+      const { store, room, toys } = storeWithContainers();
+      const withExtra = { ...item('Nails'), extra: 'not a field' } as Item;
+      store.addItem(room.id, toys.id, withExtra);
+      expect(itemsOf(store, room.id, toys.id)[0]).not.toHaveProperty('extra');
+    });
+
+    it('saves the item in the browser storage: a new store finds it', () => {
+      const { store, room, toys } = storeWithContainers();
+      const nails = item('Nails', { quantity: 100, description: 'Box of 100', category: 'Hardware' });
+      store.addItem(room.id, toys.id, nails);
+      expect(itemsOf(new RoomStore(), room.id, toys.id)).toEqual([nails]);
+    });
+
+    describe('when it fails, it returns false and changes nothing', () => {
+      function expectNothingChanged(
+        attempt: (ctx: ReturnType<typeof storeWithContainers>) => boolean,
+      ): void {
+        const ctx = storeWithContainers();
+        ctx.store.addItem(ctx.room.id, ctx.toys.id, { ...item('Existing'), id: 'existing' });
+        const roomsBefore = ctx.store.rooms();
+        const savedBefore = localStorage.getItem(ROOMS_STORAGE_KEY);
+        expect(attempt(ctx)).toBe(false);
+        expect(ctx.store.rooms()).toBe(roomsBefore);
+        expect(localStorage.getItem(ROOMS_STORAGE_KEY)).toBe(savedBefore);
+      }
+
+      it('unknown room', () => {
+        expectNothingChanged(({ store, toys }) => store.addItem('nope', toys.id, item('Nails')));
+      });
+
+      it('unknown container', () => {
+        expectNothingChanged(({ store, room }) => store.addItem(room.id, 'nope', item('Nails')));
+      });
+
+      it('a container of another room', () => {
+        const { store, toys } = storeWithContainers();
+        const attic = createRoom('Attic');
+        store.add(attic);
+        const roomsBefore = store.rooms();
+        expect(store.addItem(attic.id, toys.id, item('Nails'))).toBe(false);
+        expect(store.rooms()).toBe(roomsBefore);
+      });
+
+      it('name empty or too long', () => {
+        expectNothingChanged(({ store, room, toys }) =>
+          store.addItem(room.id, toys.id, { ...item('Nails'), name: '   ' }),
+        );
+        expectNothingChanged(({ store, room, toys }) =>
+          store.addItem(room.id, toys.id, { ...item('Nails'), name: 'a'.repeat(61) }),
+        );
+      });
+
+      it('quantity that is not a whole number from 0 to 9999', () => {
+        for (const quantity of [-1, 10000, 1.5, Number.NaN, '3' as unknown as number]) {
+          expectNothingChanged(({ store, room, toys }) =>
+            store.addItem(room.id, toys.id, { ...item('Nails'), quantity }),
+          );
+        }
+      });
+
+      it('description or category too long', () => {
+        expectNothingChanged(({ store, room, toys }) =>
+          store.addItem(room.id, toys.id, { ...item('Nails'), description: 'a'.repeat(501) }),
+        );
+        expectNothingChanged(({ store, room, toys }) =>
+          store.addItem(room.id, toys.id, { ...item('Nails'), category: 'a'.repeat(41) }),
+        );
+      });
+
+      it('id missing', () => {
+        expectNothingChanged(({ store, room, toys }) =>
+          store.addItem(room.id, toys.id, { ...item('Nails'), id: '' }),
+        );
+      });
+
+      it('id already used, in the same container or in another one', () => {
+        expectNothingChanged(({ store, room, toys }) =>
+          store.addItem(room.id, toys.id, { ...item('Nails'), id: 'existing' }),
+        );
+        expectNothingChanged(({ store, room, books }) =>
+          store.addItem(room.id, books.id, { ...item('Nails'), id: 'existing' }),
+        );
+      });
+    });
+  });
+
+  describe('categories', () => {
+    it('is empty when no item has a category', () => {
+      const { store, room, toys } = storeWithContainers();
+      expect(store.categories()).toEqual([]);
+      store.addItem(room.id, toys.id, item('Nails'));
+      expect(store.categories()).toEqual([]);
+    });
+
+    it('lists the categories in use, without repeats and in alphabetical order', () => {
+      const { store, room, toys, books } = storeWithContainers();
+      store.addItem(room.id, toys.id, item('Nails', { category: 'Tools' }));
+      store.addItem(room.id, books.id, item('Novel', { category: 'books' }));
+      store.addItem(room.id, books.id, item('Hammer', { category: 'Tools' }));
+      expect(store.categories()).toEqual(['books', 'Tools']);
+    });
+
+    it('is global across rooms', () => {
+      const { store, room, toys } = storeWithContainers();
+      store.addItem(room.id, toys.id, item('Nails', { category: 'Tools' }));
+      const attic = createRoom('Attic');
+      store.add(attic);
+      const lights = box('Lights', 0, 0);
+      store.addContainer(attic.id, lights);
+      store.addItem(attic.id, lights.id, item('Tree', { category: 'Navidad' }));
+      expect(store.categories()).toEqual(['Navidad', 'Tools']);
+    });
+
+    it('reuses the spelling of the existing category, ignoring case, accents and repeated spaces', () => {
+      const { store, room, toys, books } = storeWithContainers();
+      store.addItem(room.id, toys.id, item('Hose', { category: 'Jardín' }));
+      store.addItem(room.id, toys.id, item('Drill', { category: 'Power tools' }));
+
+      store.addItem(room.id, books.id, item('Gloves', { category: 'jardin' }));
+      store.addItem(room.id, books.id, item('Rake', { category: 'JARDIN' }));
+      store.addItem(room.id, books.id, item('Saw', { category: ' power   TOOLS ' }));
+      expect(itemsOf(store, room.id, books.id).map((i) => i.category)).toEqual([
+        'Jardín',
+        'Jardín',
+        'Power tools',
+      ]);
+      expect(store.categories()).toEqual(['Jardín', 'Power tools']);
+    });
+
+    it('reuses the spelling of a category that is used in another room', () => {
+      const { store, room, toys } = storeWithContainers();
+      store.addItem(room.id, toys.id, item('Tree', { category: 'Navidad' }));
+      const attic = createRoom('Attic');
+      store.add(attic);
+      const lights = box('Lights', 0, 0);
+      store.addContainer(attic.id, lights);
+      store.addItem(attic.id, lights.id, item('Lights', { category: 'navidad' }));
+      expect(itemsOf(store, attic.id, lights.id)[0].category).toBe('Navidad');
+    });
+
+    it('stops listing a category when the container of its last item is deleted', () => {
+      const { store, room, toys, books } = storeWithContainers();
+      store.addItem(room.id, toys.id, item('Nails', { category: 'Tools' }));
+      store.addItem(room.id, books.id, item('Novel', { category: 'Books' }));
+      store.removeContainer(room.id, toys.id);
+      expect(store.categories()).toEqual(['Books']);
+      // The spelling is free again: the next item decides it.
+      store.addItem(room.id, books.id, item('Hammer', { category: 'TOOLS' }));
+      expect(store.categories()).toEqual(['Books', 'TOOLS']);
+    });
+
+    it('stops listing the categories of a room that is deleted', () => {
+      const { store, room, toys } = storeWithContainers();
+      store.addItem(room.id, toys.id, item('Nails', { category: 'Tools' }));
+      store.remove(room.id);
+      expect(store.categories()).toEqual([]);
+    });
+  });
+
+  describe('the other changes keep the items', () => {
+    it('removing a container removes its items and keeps the items of the others', () => {
+      const { store, room, toys, books } = storeWithContainers();
+      const nails = item('Nails');
+      const novel = item('Novel');
+      store.addItem(room.id, toys.id, nails);
+      store.addItem(room.id, books.id, novel);
+      expect(store.removeContainer(room.id, toys.id)).toBe(true);
+      const saved = new RoomStore().getById(room.id)?.containers ?? [];
+      expect(saved.map((c) => c.name)).toEqual(['Books']);
+      expect(saved[0].items).toEqual([novel]);
+    });
+
+    it('renaming, moving and rotating a container keeps its items', () => {
+      const { store, room, toys } = storeWithContainers();
+      const nails = item('Nails', { quantity: 100, category: 'Hardware' });
+      store.addItem(room.id, toys.id, nails);
+      expect(store.renameContainer(room.id, toys.id, 'Workshop')).toBe(true);
+      expect(store.moveContainer(room.id, toys.id, 0, 2000)).toBe(true);
+      expect(store.rotateContainer(room.id, toys.id)).toBe(true);
+      expect(itemsOf(store, room.id, toys.id)).toEqual([nails]);
+      expect(itemsOf(new RoomStore(), room.id, toys.id)).toEqual([nails]);
+    });
+
+    it('stacking, reordering and unstacking keeps the items of each container', () => {
+      const { store, room, toys, books } = storeWithContainers();
+      const nails = item('Nails');
+      const novel = item('Novel');
+      store.addItem(room.id, toys.id, nails);
+      store.addItem(room.id, books.id, novel);
+
+      expect(store.stackContainer(room.id, books.id, toys.id)).toBe(true);
+      expect(store.moveInStack(room.id, books.id, 'down')).toBe(true);
+      expect(store.moveContainer(room.id, toys.id, 1000, 1000)).toBe(true);
+      expect(store.rotateContainer(room.id, books.id)).toBe(true);
+      expect(store.unstackContainer(room.id, toys.id)).toBe(true);
+
+      expect(itemsOf(store, room.id, toys.id)).toEqual([nails]);
+      expect(itemsOf(store, room.id, books.id)).toEqual([novel]);
+    });
+
+    it('a new container put on a stack starts without items', () => {
+      const { store, room, toys } = storeWithContainers();
+      store.addItem(room.id, toys.id, item('Nails'));
+      const onTop = box('Top', 0, 0);
+      expect(store.addContainerOnStack(room.id, onTop, toys.id)).toBe(true);
+      expect(itemsOf(store, room.id, onTop.id)).toEqual([]);
+      expect(itemsOf(store, room.id, toys.id).length).toBe(1);
+    });
+
+    it('resizing and renaming the room keeps the items', () => {
+      const { store, room, toys } = storeWithContainers();
+      const nails = item('Nails');
+      store.addItem(room.id, toys.id, nails);
+      store.resize(room.id, 5000, 4000);
+      store.rename(room.id, 'Attic');
+      expect(itemsOf(store, room.id, toys.id)).toEqual([nails]);
+    });
+  });
+
+  describe('loading', () => {
+    const goodItem: Item = {
+      id: 'item-1',
+      name: 'Nails',
+      quantity: 100,
+      description: 'Box of 100\n2 in',
+      category: 'Hardware',
+    };
+
+    /** Saves one room with one container that has `items`, and returns what a new store loads. */
+    function load(items: unknown, containerExtra: Record<string, unknown> = {}) {
+      const room = createRoom('Garage');
+      const container: Record<string, unknown> = { ...box('Toys', 0, 0), ...containerExtra };
+      if (items === undefined) {
+        delete container['items'];
+      } else {
+        container['items'] = items;
+      }
+      localStorage.setItem(ROOMS_STORAGE_KEY, JSON.stringify([{ ...room, containers: [container] }]));
+      const loaded = new RoomStore().getById(room.id)?.containers ?? [];
+      return { containers: loaded, items: loaded[0]?.items };
+    }
+
+    it('loads a container saved before items existed with an empty list', () => {
+      const { containers, items } = load(undefined);
+      expect(containers.length).toBe(1);
+      expect(containers[0].name).toBe('Toys');
+      expect(items).toEqual([]);
+    });
+
+    it('loads a room saved before containers existed', () => {
+      const room = createRoom('Garage');
+      const { containers: _containers, ...oldRoom } = room;
+      localStorage.setItem(ROOMS_STORAGE_KEY, JSON.stringify([oldRoom]));
+      expect(new RoomStore().getById(room.id)?.containers).toEqual([]);
+    });
+
+    it('keeps the container, with an empty list, when its items are not a list', () => {
+      for (const value of [null, 'items', 7, { 0: goodItem }]) {
+        const { containers, items } = load(value);
+        expect(containers.length).toBe(1);
+        expect(items).toEqual([]);
+      }
+    });
+
+    it('loads well-formed items as they are, in the saved order', () => {
+      const second: Item = { id: 'item-2', name: 'Cables', quantity: 0, description: '', category: '' };
+      expect(load([goodItem, second]).items).toEqual([goodItem, second]);
+    });
+
+    it('discards only the items without a usable name, and keeps the container and the other items', () => {
+      const { containers, items } = load([
+        goodItem,
+        null,
+        'Nails',
+        42,
+        { ...goodItem, id: 'no-name', name: undefined },
+        { ...goodItem, id: 'not-text', name: 7 },
+        { ...goodItem, id: 'empty', name: '   ' },
+        { ...goodItem, id: 'item-2', name: 'Cables' },
+      ]);
+      expect(containers.length).toBe(1);
+      expect(items?.map((i) => i.id)).toEqual(['item-1', 'item-2']);
+    });
+
+    it('trims a name and cuts one that is too long to 60 characters', () => {
+      const { items } = load([
+        { ...goodItem, id: 'a', name: '  Nails  ' },
+        { ...goodItem, id: 'b', name: 'n'.repeat(80) },
+        { ...goodItem, id: 'c', name: `${'n'.repeat(59)} tail` },
+      ]);
+      expect(items?.map((i) => i.name)).toEqual(['Nails', 'n'.repeat(60), 'n'.repeat(59)]);
+    });
+
+    it('gives a new id to an item whose id is missing or not usable, and keeps it', () => {
+      const { items } = load([
+        { ...goodItem, id: undefined },
+        { ...goodItem, id: '' },
+        { ...goodItem, id: 7 },
+      ]);
+      expect(items?.length).toBe(3);
+      const ids = items?.map((i) => i.id) ?? [];
+      expect(ids.every((id) => typeof id === 'string' && id.length > 0)).toBe(true);
+      expect(new Set(ids).size).toBe(3);
+      expect(items?.map((i) => i.name)).toEqual(['Nails', 'Nails', 'Nails']);
+    });
+
+    it('gives a new id to an item whose id is repeated, and keeps both', () => {
+      const { items } = load([goodItem, { ...goodItem, name: 'Cables' }]);
+      expect(items?.map((i) => i.name)).toEqual(['Nails', 'Cables']);
+      expect(items?.[0].id).toBe('item-1');
+      expect(items?.[1].id).not.toBe('item-1');
+      expect(items?.[1].id).toBeTruthy();
+    });
+
+    it('gives a new id to an item whose id is used in another container or room', () => {
+      const garage = createRoom('Garage');
+      const attic = createRoom('Attic');
+      localStorage.setItem(
+        ROOMS_STORAGE_KEY,
+        JSON.stringify([
+          {
+            ...garage,
+            containers: [
+              { ...box('A', 0, 0), items: [goodItem] },
+              { ...box('B', 2000, 0), items: [goodItem] },
+            ],
+          },
+          { ...attic, containers: [{ ...box('C', 0, 0), items: [goodItem] }] },
+        ]),
+      );
+      const store = new RoomStore();
+      const all = store.rooms().flatMap((r) => r.containers.flatMap((c) => c.items));
+      expect(all.length).toBe(3);
+      expect(new Set(all.map((i) => i.id)).size).toBe(3);
+      expect(all[0].id).toBe('item-1');
+    });
+
+    it('rounds a quantity and keeps it from 0 to 9999', () => {
+      const { items } = load([
+        { ...goodItem, id: 'a', quantity: 2.6 },
+        { ...goodItem, id: 'b', quantity: -5 },
+        { ...goodItem, id: 'c', quantity: 123456 },
+        { ...goodItem, id: 'd', quantity: 0 },
+      ]);
+      expect(items?.map((i) => i.quantity)).toEqual([3, 0, 9999, 0]);
+    });
+
+    it('uses the quantity 1 when the saved quantity is not a number', () => {
+      const { items } = load([
+        { ...goodItem, id: 'a', quantity: undefined },
+        { ...goodItem, id: 'b', quantity: '5' },
+        { ...goodItem, id: 'c', quantity: null },
+      ]);
+      expect(items?.map((i) => i.quantity)).toEqual([1, 1, 1]);
+    });
+
+    it('empties a description or category that is not text', () => {
+      const { items } = load([
+        { id: 'a', name: 'Nails', quantity: 1 },
+        { ...goodItem, id: 'b', description: 7, category: ['Hardware'] },
+      ]);
+      expect(items).toEqual([
+        { id: 'a', name: 'Nails', quantity: 1, description: '', category: '' },
+        { id: 'b', name: 'Nails', quantity: 100, description: '', category: '' },
+      ]);
+    });
+
+    it('trims a description and cuts one that is too long to 500 characters, keeping its line breaks', () => {
+      const { items } = load([
+        { ...goodItem, id: 'a', description: '  Line 1\nLine 2  ' },
+        { ...goodItem, id: 'b', description: 'd'.repeat(600) },
+      ]);
+      expect(items?.[0].description).toBe('Line 1\nLine 2');
+      expect(items?.[1].description).toBe('d'.repeat(500));
+    });
+
+    it('cleans a category and cuts one that is too long to 40 characters', () => {
+      const { items } = load([
+        { ...goodItem, id: 'a', category: '  Power   tools ' },
+        { ...goodItem, id: 'b', category: 'c'.repeat(50) },
+      ]);
+      expect(items?.map((i) => i.category)).toEqual(['Power tools', 'c'.repeat(40)]);
+    });
+
+    it('does not rewrite the spelling of saved categories, and suggests the first spelling', () => {
+      const { items } = load([
+        { ...goodItem, id: 'a', category: 'Jardín' },
+        { ...goodItem, id: 'b', category: 'jardin' },
+      ]);
+      expect(items?.map((i) => i.category)).toEqual(['Jardín', 'jardin']);
+      expect(new RoomStore().categories()).toEqual(['Jardín']);
+    });
+
+    it('drops fields that are not part of an item', () => {
+      const { items } = load([{ ...goodItem, extra: 'x' }]);
+      expect(items).toEqual([goodItem]);
+    });
+
+    it('repairs the container and keeps its items when its rotation and stack position are wrong', () => {
+      const { containers, items } = load([goodItem], { rotation: 45, stackPosition: -2 });
+      expect(containers[0].rotation).toBe(0);
+      expect(containers[0].stackPosition).toBe(0);
+      expect(items).toEqual([goodItem]);
+    });
+
+    it('lets a loaded container receive new items', () => {
+      const room = createRoom('Garage');
+      const { items: _items, ...oldContainer } = box('Toys', 0, 0);
+      localStorage.setItem(
+        ROOMS_STORAGE_KEY,
+        JSON.stringify([{ ...room, containers: [oldContainer] }]),
+      );
+      const store = new RoomStore();
+      const nails = item('Nails');
+      expect(store.addItem(room.id, oldContainer.id, nails)).toBe(true);
+      expect(itemsOf(new RoomStore(), room.id, oldContainer.id)).toEqual([nails]);
+    });
   });
 });

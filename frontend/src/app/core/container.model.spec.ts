@@ -28,7 +28,7 @@ describe('container model', () => {
     expect(isValidContainerName('a'.repeat(61))).toBe(false);
   });
 
-  it('creates a container with a trimmed name, rotation 0 and alone in its stack (level 0)', () => {
+  it('creates a container with a trimmed name, rotation 0, alone in its stack (level 0) and no items', () => {
     const container = createContainer(TOUGH_BOX_27_GAL.id, '  Toys  ', 100, 200);
     expect(container).toEqual({
       id: container.id,
@@ -38,6 +38,7 @@ describe('container model', () => {
       yMm: 200,
       rotation: 0,
       stackPosition: 0,
+      items: [],
     });
     expect(container.id).toBeTruthy();
   });
