@@ -1,0 +1,21 @@
+@if (rows().length === 0) {
+  <p class="empty">No items yet.</p>
+} @else {
+  <ul class="items">
+    @for (row of rows(); track row.id) {
+      <li class="item">
+        <div class="item-head">
+          <!-- &ngsp; keeps a space between the two texts, so they are not read as one word. -->
+          <span class="item-name">{{ row.name }}</span
+          >&ngsp;<span class="item-quantity">{{ row.quantity }}</span>
+        </div>
+        @if (row.category) {
+          <p class="item-category">Category: {{ row.category }}</p>
+        }
+        @if (row.description) {
+          <p class="item-description">{{ row.description }}</p>
+        }
+      </li>
+    }
+  </ul>
+}

@@ -1,4 +1,4 @@
-import { Service, signal } from '@angular/core';
+import { computed, Service, signal } from '@angular/core';
 import { Container, getContainerType, isValidContainerName } from './container.model';
 import { placementProblemIgnoring, rotatedContainer } from './container-move';
 import {
@@ -9,6 +9,17 @@ import {
   minRoomSizeFor,
 } from './container-placement';
 import { normalizeStacks, removeFromStack, reorderStack, stackOf } from './container-stack';
+import { canonicalCategory, cleanCategory, usedCategories } from './item-category';
+import {
+  isValidItemDraft,
+  Item,
+  ITEM_CATEGORY_MAX_LENGTH,
+  ITEM_DESCRIPTION_MAX_LENGTH,
+  ITEM_NAME_MAX_LENGTH,
+  ITEM_QUANTITY_DEFAULT,
+  ITEM_QUANTITY_MAX,
+  ITEM_QUANTITY_MIN,
+} from './item.model';
 import {
   clampRoomSize,
   isValidRoomName,
@@ -48,20 +59,21 @@ function isRoom(value: unknown): value is SavedRoom {
 }
 
 /**
- * A container as it can be found in localStorage: the rotation and the stack position may be
- * missing or wrong (containers saved before stacks existed have no stack position).
+ * A container as it can be found in localStorage: the rotation, the stack position and the items
+ * may be missing or wrong (containers saved before stacks or items existed do not have them).
  */
-type SavedContainer = Omit<Container, 'rotation' | 'stackPosition'> & {
+type SavedContainer = Omit<Container, 'rotation' | 'stackPosition' | 'items'> & {
   rotation?: unknown;
   stackPosition?: unknown;
+  items?: unknown;
 };
 
 /**
  * Checks the shape of a saved container. It only checks the data, not the placement: a
  * well-formed container is kept even if it sits outside the room or overlaps another one.
  * The placement rules are applied when the user adds, moves or resizes, not when loading.
- * The rotation and the stack position are not checked here: `loadContainers` repairs them
- * instead of discarding the container.
+ * The rotation, the stack position and the items are not checked here: `loadContainers` repairs
+ * them instead of discarding the container.
  */
 function isContainer(value: unknown): value is SavedContainer {
   if (typeof value !== 'object' || value === null) {
@@ -80,6 +92,64 @@ function isContainer(value: unknown): value is SavedContainer {
   );
 }
 
+/** Removes the surrounding spaces and cuts the text to `maxLength` characters. */
+function trimAndCut(text: string, maxLength: number): string {
+  return text.trim().slice(0, maxLength).trimEnd();
+}
+
+/**
+ * Reads the items of a saved container. Containers saved before items existed have none, and a
+ * value that is not a list gives an empty list. An item is discarded only when it has no usable
+ * name (missing, not text, or empty after trimming). Everything else is repaired, because losing
+ * an item is worse than losing one of its details:
+ * - a missing or repeated id becomes a new id (`seenIds` has the ids already read in any room);
+ * - a name, description or category that is too long is cut to its maximum;
+ * - a quantity that is a number is rounded and kept from 0 to 9999; if it is not a number it
+ *   becomes 1;
+ * - a description or category that is not text becomes empty.
+ */
+function loadItems(value: unknown, seenIds: Set<string>): Item[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  const items: Item[] = [];
+  for (const entry of value) {
+    if (typeof entry !== 'object' || entry === null) {
+      continue;
+    }
+    const saved = entry as Record<string, unknown>;
+    const savedName = saved['name'];
+    const name = typeof savedName === 'string' ? trimAndCut(savedName, ITEM_NAME_MAX_LENGTH) : '';
+    if (name === '') {
+      continue;
+    }
+    const savedId = saved['id'];
+    const id =
+      typeof savedId === 'string' && savedId.length > 0 && !seenIds.has(savedId)
+        ? savedId
+        : crypto.randomUUID();
+    seenIds.add(id);
+    const quantity = saved['quantity'];
+    const description = saved['description'];
+    const category = saved['category'];
+    items.push({
+      id,
+      name,
+      quantity:
+        typeof quantity === 'number' && Number.isFinite(quantity)
+          ? Math.min(ITEM_QUANTITY_MAX, Math.max(ITEM_QUANTITY_MIN, Math.round(quantity)))
+          : ITEM_QUANTITY_DEFAULT,
+      description:
+        typeof description === 'string' ? trimAndCut(description, ITEM_DESCRIPTION_MAX_LENGTH) : '',
+      category:
+        typeof category === 'string'
+          ? trimAndCut(cleanCategory(category), ITEM_CATEGORY_MAX_LENGTH)
+          : '',
+    });
+  }
+  return items;
+}
+
 /**
  * Reads the containers of a saved room. Rooms saved before containers existed have none.
  * Malformed entries and repeated ids are discarded. A rotation that is missing or is not 0 or 90
@@ -88,8 +158,9 @@ function isContainer(value: unknown): value is SavedContainer {
  * Finally the stacks are normalized: containers sitting exactly on top of each other (same
  * corner and rotation) form one stack, ordered by their stack position and then by their order
  * in the saved list (the first one goes at the bottom), with levels 0, 1, 2... and no gaps.
+ * The items of each container are read with `loadItems`.
  */
-function loadContainers(value: unknown): Container[] {
+function loadContainers(value: unknown, seenItemIds: Set<string>): Container[] {
   if (!Array.isArray(value)) {
     return [];
   }
@@ -109,6 +180,7 @@ function loadContainers(value: unknown): Container[] {
           Number.isInteger(item.stackPosition) && (item.stackPosition as number) >= 0
             ? (item.stackPosition as number)
             : 0,
+        items: loadItems(item.items, seenItemIds),
       });
     }
   }
@@ -127,6 +199,8 @@ function loadRooms(): Room[] {
       return [];
     }
     const seenIds = new Set<string>();
+    // Item ids are unique across all the rooms, so one set is shared by the whole load.
+    const seenItemIds = new Set<string>();
     const rooms: Room[] = [];
     for (const item of parsed) {
       if (isRoom(item) && !seenIds.has(item.id)) {
@@ -136,7 +210,7 @@ function loadRooms(): Room[] {
           name: item.name,
           widthMm: item.widthMm,
           depthMm: item.depthMm,
-          containers: loadContainers(item.containers),
+          containers: loadContainers(item.containers, seenItemIds),
         });
       }
     }
@@ -157,6 +231,13 @@ export class RoomStore {
 
   /** Read-only view of the rooms. Change them only through the methods below. */
   readonly rooms = this.roomsState.asReadonly();
+
+  /**
+   * The categories used by the items of all the rooms, without repeats and in alphabetical order.
+   * They are the suggestions of the "Add item" form. There is no separate list: a category stops
+   * being suggested when its last item is gone.
+   */
+  readonly categories = computed(() => usedCategories(this.roomsState()));
 
   getById(id: string): Room | undefined {
     return this.roomsState().find((room) => room.id === id);
@@ -405,8 +486,43 @@ export class RoomStore {
   }
 
   /**
-   * Removes a container. If it was in the middle of a stack, the gap is closed and the levels
-   * above it go down by one. Returns false if the room or container does not exist.
+   * Adds an item to a container. The name and the description are saved trimmed. The category is
+   * saved with the spelling already in use when it exists in any room ("navidad" becomes
+   * "Navidad"). Returns false, and changes nothing, if the room or the container does not exist,
+   * a field of the item is not valid, or its id is missing or already used by another item.
+   */
+  addItem(roomId: string, containerId: string, item: Item): boolean {
+    const room = this.getById(roomId);
+    if (
+      !room ||
+      !room.containers.some((c) => c.id === containerId) ||
+      typeof item.id !== 'string' ||
+      item.id.length === 0 ||
+      !isValidItemDraft(item) ||
+      this.roomsState().some((r) => r.containers.some((c) => c.items.some((i) => i.id === item.id)))
+    ) {
+      return false;
+    }
+    const saved: Item = {
+      id: item.id,
+      name: item.name.trim(),
+      quantity: item.quantity,
+      description: item.description.trim(),
+      category: canonicalCategory(item.category, this.categories()),
+    };
+    this.updateRoom(roomId, (r) => ({
+      ...r,
+      containers: r.containers.map((c) =>
+        c.id === containerId ? { ...c, items: [...c.items, saved] } : c,
+      ),
+    }));
+    return true;
+  }
+
+  /**
+   * Removes a container and the items inside it. If it was in the middle of a stack, the gap is
+   * closed and the levels above it go down by one. Returns false if the room or container does
+   * not exist.
    */
   removeContainer(roomId: string, containerId: string): boolean {
     const room = this.getById(roomId);

@@ -1,0 +1,51 @@
+:host {
+  display: block;
+}
+
+.item-form {
+  padding: 0.75rem;
+  border: 1px solid #d1d5db;
+  border-radius: 0.25rem;
+}
+
+h4 {
+  margin: 0 0 0.75rem;
+  font-size: 1rem;
+}
+
+.field {
+  margin-bottom: 0.75rem;
+}
+
+// The global style gives text inputs a 0.5rem right margin: leave room for it.
+input {
+  box-sizing: border-box;
+  width: calc(100% - 0.5rem);
+}
+
+// Same look as the text inputs. It can only be stretched down, so it never leaves the panel.
+textarea {
+  display: block;
+  box-sizing: border-box;
+  width: calc(100% - 0.5rem);
+  padding: 0.5rem;
+  font: inherit;
+  resize: vertical;
+}
+
+.field-error {
+  margin: 0.25rem 0 0;
+}
+
+.counter {
+  margin: 0.25rem 0.5rem 0 0;
+  color: #4b5563;
+  font-size: 0.875rem;
+  text-align: right;
+}
+
+.status {
+  min-height: 1.5rem;
+  margin: 0.5rem 0 0;
+  overflow-wrap: anywhere;
+}

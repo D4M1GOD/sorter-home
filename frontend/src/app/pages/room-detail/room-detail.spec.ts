@@ -1,9 +1,10 @@
-import { TestBed } from '@angular/core/testing';
+import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { provideRouter } from '@angular/router';
 import { RouterTestingHarness } from '@angular/router/testing';
 import { RoomStore } from '../../core/room-store';
 import { createContainer, TOUGH_BOX_27_GAL } from '../../core/container.model';
+import { createItem } from '../../core/item.model';
 import { createRoom } from '../../core/room.model';
 import { RoomPlan } from '../../room-plan/room-plan';
 import { routes } from '../../app.routes';
@@ -707,6 +708,185 @@ describe('RoomDetail', () => {
 
       expect(store.getById(room.id)?.widthMm).toBe(2794);
       expect(store.getById(room.id)?.depthMm).toBe(2032);
+    });
+  });
+
+  describe('items', () => {
+    function panelButton(element: HTMLElement, label: string): HTMLButtonElement | undefined {
+      return Array.from(element.querySelectorAll('app-container-panel button')).find(
+        (b) => (b.textContent ?? '').trim() === label,
+      ) as HTMLButtonElement | undefined;
+    }
+
+    function typeIn(element: HTMLElement, id: string, text: string): void {
+      const field = element.querySelector(`#${id}`) as HTMLInputElement;
+      field.value = text;
+      field.dispatchEvent(new Event('input'));
+    }
+
+    /** Opens a room with the containers "Toys" and "Books", and selects "Toys". */
+    async function openWithContainers() {
+      const store = TestBed.inject(RoomStore);
+      const room = createRoom('Garage');
+      store.add(room);
+      const toys = createContainer(TOUGH_BOX_27_GAL.id, 'Toys', 0, 0);
+      const books = createContainer(TOUGH_BOX_27_GAL.id, 'Books', 2000, 0);
+      store.addContainer(room.id, toys);
+      store.addContainer(room.id, books);
+      const opened = await open(room.id);
+      await select(opened.fixture, toys.id);
+      return { store, room, toys, books, ...opened };
+    }
+
+    async function select(fixture: ComponentFixture<unknown>, id: string) {
+      const plan = fixture.debugElement.query(By.directive(RoomPlan)).componentInstance as RoomPlan;
+      plan.selectedId.set(id);
+      await fixture.whenStable();
+    }
+
+    async function addItem(
+      fixture: ComponentFixture<unknown>,
+      element: HTMLElement,
+      values: { name: string; quantity?: string; description?: string; category?: string },
+    ) {
+      if (!element.querySelector('app-item-form')) {
+        panelButton(element, 'Add item')?.click();
+        await fixture.whenStable();
+      }
+      typeIn(element, 'item-name', values.name);
+      if (values.quantity !== undefined) {
+        typeIn(element, 'item-quantity', values.quantity);
+      }
+      typeIn(element, 'item-description', values.description ?? '');
+      typeIn(element, 'item-category', values.category ?? '');
+      element.querySelector('app-item-form form')?.dispatchEvent(new Event('submit'));
+      await fixture.whenStable();
+    }
+
+    function itemsOf(store: RoomStore, roomId: string, containerId: string) {
+      return store.getById(roomId)?.containers.find((c) => c.id === containerId)?.items ?? [];
+    }
+
+    it('adds an item to the selected container, shows it in the list and saves it', async () => {
+      const { store, room, toys, books, fixture, element } = await openWithContainers();
+      expect(element.querySelector('.items h3')?.textContent?.trim()).toBe('Items (0)');
+
+      await addItem(fixture, element, {
+        name: '  Nails ',
+        quantity: '100',
+        description: 'Box of 100',
+        category: 'Hardware',
+      });
+
+      const saved = itemsOf(store, room.id, toys.id);
+      expect(saved).toEqual([
+        { id: saved[0].id, name: 'Nails', quantity: 100, description: 'Box of 100', category: 'Hardware' },
+      ]);
+      expect(itemsOf(store, room.id, books.id)).toEqual([]);
+      expect(element.querySelector('.items h3')?.textContent?.trim()).toBe('Items (1)');
+      const row = element.querySelector('.item') as HTMLElement;
+      expect(row.querySelector('.item-name')?.textContent?.trim()).toBe('Nails');
+      expect(row.querySelector('.item-quantity')?.textContent?.trim()).toBe('Qty 100');
+      expect(row.querySelector('.item-category')?.textContent?.trim()).toBe('Category: Hardware');
+      expect(row.querySelector('.item-description')?.textContent).toBe('Box of 100');
+      // The form stays open and clean for the next item.
+      expect((element.querySelector('#item-name') as HTMLInputElement).value).toBe('');
+      expect(element.querySelector('app-item-form .status')?.textContent?.trim()).toBe('Added Nails');
+      // Saved in the browser storage too: a new store finds it.
+      expect(itemsOf(new RoomStore(), room.id, toys.id)).toEqual(saved);
+    });
+
+    it('adds several items in a row and lists them in alphabetical order', async () => {
+      const { store, room, toys, fixture, element } = await openWithContainers();
+      await addItem(fixture, element, { name: 'Nails' });
+      expect(element.querySelector('app-item-form')).not.toBeNull(); // still open after adding
+      await addItem(fixture, element, { name: 'cables', quantity: '0' });
+      await addItem(fixture, element, { name: 'Batteries' });
+
+      // Stored in the order they were added, shown in alphabetical order.
+      expect(itemsOf(store, room.id, toys.id).map((item) => item.name)).toEqual([
+        'Nails',
+        'cables',
+        'Batteries',
+      ]);
+      const names = Array.from(element.querySelectorAll('.item-name')).map((n) => n.textContent?.trim());
+      expect(names).toEqual(['Batteries', 'cables', 'Nails']);
+      expect(element.querySelectorAll('.item-quantity')[1].textContent?.trim()).toBe('None left');
+    });
+
+    it('saves nothing when the form has errors', async () => {
+      const { store, room, toys, fixture, element } = await openWithContainers();
+      await addItem(fixture, element, { name: 'Nails', quantity: '1.5' });
+      expect(itemsOf(store, room.id, toys.id)).toEqual([]);
+      expect(element.querySelector('app-item-form .field-error')?.textContent).toContain('whole number');
+    });
+
+    it('suggests the categories used in any room and reuses their spelling', async () => {
+      const { store, room, toys, fixture, element } = await openWithContainers();
+      // A category used in another room.
+      const attic = createRoom('Attic');
+      store.add(attic);
+      const box = createContainer(TOUGH_BOX_27_GAL.id, 'Box', 0, 0);
+      store.addContainer(attic.id, box);
+      store.addItem(
+        attic.id,
+        box.id,
+        createItem({ name: 'Hose', quantity: 1, description: '', category: 'Jardín' }),
+      );
+
+      panelButton(element, 'Add item')?.click();
+      await fixture.whenStable();
+      const options = () =>
+        Array.from(element.querySelectorAll('datalist option')).map((o) => o.getAttribute('value'));
+      expect(options()).toEqual(['Jardín']);
+
+      await addItem(fixture, element, { name: 'Gloves', category: ' JARDIN ' });
+      expect(itemsOf(store, room.id, toys.id)[0].category).toBe('Jardín');
+
+      await addItem(fixture, element, { name: 'Nails', category: 'Hardware' });
+      expect(options()).toEqual(['Hardware', 'Jardín']);
+    });
+
+    it('shows the items of the container that is selected', async () => {
+      const { books, fixture, element } = await openWithContainers();
+      await addItem(fixture, element, { name: 'Nails' });
+
+      await select(fixture, books.id);
+      expect(element.querySelector('app-item-form')).toBeNull();
+      expect(element.querySelector('.items h3')?.textContent?.trim()).toBe('Items (0)');
+      expect(element.querySelector('.items')?.textContent).toContain('No items yet.');
+    });
+
+    it('does not rotate the container when the user types "r" in the form', async () => {
+      const { store, room, toys, fixture, element } = await openWithContainers();
+      panelButton(element, 'Add item')?.click();
+      await fixture.whenStable();
+      for (const id of ['item-name', 'item-description']) {
+        element
+          .querySelector(`#${id}`)
+          ?.dispatchEvent(new KeyboardEvent('keydown', { key: 'r', bubbles: true }));
+      }
+      await fixture.whenStable();
+      expect(store.getById(room.id)?.containers.find((c) => c.id === toys.id)?.rotation).toBe(0);
+    });
+
+    it('asks with the number of items before deleting the container, and deletes them with it', async () => {
+      const { store, room, toys, fixture, element } = await openWithContainers();
+      await addItem(fixture, element, { name: 'Nails', category: 'Hardware' });
+      await addItem(fixture, element, { name: 'Screws', category: 'Hardware' });
+      expect(store.categories()).toEqual(['Hardware']);
+
+      panelButton(element, 'Delete')?.click();
+      await fixture.whenStable();
+      expect(element.querySelector('app-container-panel .confirm span')?.textContent?.trim()).toBe(
+        '"Toys" has 2 items. Delete it and its items? This cannot be undone.',
+      );
+      panelButton(element, 'Yes, delete')?.click();
+      await fixture.whenStable();
+
+      expect(store.getById(room.id)?.containers.some((c) => c.id === toys.id)).toBe(false);
+      // Its category was only used by the deleted items, so it is no longer suggested.
+      expect(store.categories()).toEqual([]);
     });
   });
 

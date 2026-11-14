@@ -1,6 +1,7 @@
-import { TestBed } from '@angular/core/testing';
+import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { vi } from 'vitest';
 import { createContainer, TOUGH_BOX_27_GAL } from '../core/container.model';
+import { Item } from '../core/item.model';
 import { ContainerPanel } from './container-panel';
 
 describe('ContainerPanel', () => {
@@ -42,10 +43,10 @@ describe('ContainerPanel', () => {
     expect(input(element).value).toBe('Toys');
   });
 
-  it('offers Rotate 90° and Delete, and no other actions in this step', async () => {
+  it('offers Rotate 90°, Add item and Delete, and no other actions in this step', async () => {
     const { element } = await setup();
     const labels = Array.from(element.querySelectorAll('button')).map((b) => b.textContent?.trim());
-    expect(labels).toEqual(['Rotate 90°', 'Delete']);
+    expect(labels).toEqual(['Rotate 90°', 'Add item', 'Delete']);
   });
 
   describe('rotate', () => {
@@ -140,13 +141,14 @@ describe('ContainerPanel', () => {
       expect(movedUp).not.toHaveBeenCalled();
     });
 
-    it('orders the panel: name, stack list, Rotate 90°, messages, Delete', async () => {
+    it('orders the panel: name, stack list, Rotate 90°, messages, items, Delete', async () => {
       const { element } = await setupStacked();
       const parts = [
         element.querySelector('form'),
         element.querySelector('app-container-stack'),
         button(element, 'Rotate 90°'),
         element.querySelector('.notice'),
+        element.querySelector('.items'),
         button(element, 'Delete'),
       ] as Element[];
       for (let i = 0; i < parts.length - 1; i++) {
@@ -220,6 +222,178 @@ describe('ContainerPanel', () => {
       fixture.detectChanges();
       await fixture.whenStable();
       expect(input(element).value).toBe('Books');
+    });
+  });
+
+  describe('items', () => {
+    function item(name: string, values: Partial<Item> = {}): Item {
+      return { id: `id-${name}`, name, quantity: 1, description: '', category: '', ...values };
+    }
+
+    async function setupWithItems(items: Item[]) {
+      const result = await setup();
+      result.fixture.componentRef.setInput('container', { ...container, items });
+      result.fixture.detectChanges();
+      const itemAdded = vi.fn();
+      result.fixture.componentInstance.itemAdded.subscribe(itemAdded);
+      return { ...result, itemAdded };
+    }
+
+    function typeIn(element: HTMLElement, id: string, text: string): void {
+      const field = element.querySelector(`#${id}`) as HTMLInputElement;
+      field.value = text;
+      field.dispatchEvent(new Event('input'));
+    }
+
+    async function openForm(fixture: ComponentFixture<unknown>, element: HTMLElement) {
+      button(element, 'Add item')?.click();
+      fixture.detectChanges();
+      await fixture.whenStable();
+    }
+
+    it('shows "Items (0)", "No items yet." and the "Add item" button for an empty container', async () => {
+      const { element } = await setup();
+      const section = element.querySelector('.items') as HTMLElement;
+      expect(section.querySelector('h3')?.textContent?.trim()).toBe('Items (0)');
+      expect(section.getAttribute('aria-labelledby')).toBe(section.querySelector('h3')?.id);
+      expect(section.textContent).toContain('No items yet.');
+      expect(button(element, 'Add item')).toBeDefined();
+      expect(element.querySelector('app-item-form')).toBeNull();
+    });
+
+    it('shows the number of items in the title and lists them', async () => {
+      const { element } = await setupWithItems([
+        item('Nails', { quantity: 100 }),
+        item('Cables', { quantity: 0 }),
+      ]);
+      expect(element.querySelector('.items h3')?.textContent?.trim()).toBe('Items (2)');
+      const rows = Array.from(element.querySelectorAll('.item')).map((row) =>
+        row.textContent?.replace(/\s+/g, ' ').trim(),
+      );
+      expect(rows).toEqual(['Cables None left', 'Nails Qty 100']);
+      expect(element.textContent).not.toContain('No items yet.');
+    });
+
+    it('opens the form in place of the "Add item" button', async () => {
+      const { fixture, element } = await setup();
+      await openForm(fixture, element);
+      expect(element.querySelector('app-item-form')).not.toBeNull();
+      expect(button(element, 'Add item')).toBeUndefined();
+      // The form is inside the items section, before the list.
+      const form = element.querySelector('.items app-item-form') as Element;
+      const list = element.querySelector('.items app-item-list') as Element;
+      expect(form.compareDocumentPosition(list) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    });
+
+    it('passes the categories in use to the form as suggestions', async () => {
+      const { fixture, element } = await setup();
+      fixture.componentRef.setInput('categories', ['Hardware', 'Navidad']);
+      await openForm(fixture, element);
+      const options = Array.from(element.querySelectorAll('datalist option')).map((o) =>
+        o.getAttribute('value'),
+      );
+      expect(options).toEqual(['Hardware', 'Navidad']);
+    });
+
+    it('emits "itemAdded" with what the user filled in, saves nothing by itself and keeps the form open', async () => {
+      const { fixture, element, itemAdded } = await setupWithItems([]);
+      await openForm(fixture, element);
+      typeIn(element, 'item-name', 'Nails');
+      typeIn(element, 'item-quantity', '100');
+      element.querySelector('app-item-form form')?.dispatchEvent(new Event('submit'));
+      await fixture.whenStable();
+      fixture.detectChanges();
+      expect(itemAdded).toHaveBeenCalledTimes(1);
+      expect(itemAdded).toHaveBeenCalledWith({
+        name: 'Nails',
+        quantity: 100,
+        description: '',
+        category: '',
+      });
+      expect(element.querySelector('app-item-form')).not.toBeNull();
+      expect(element.querySelector('.items h3')?.textContent?.trim()).toBe('Items (0)');
+    });
+
+    it('does not emit "itemAdded" when the form has errors', async () => {
+      const { fixture, element, itemAdded } = await setupWithItems([]);
+      await openForm(fixture, element);
+      element.querySelector('app-item-form form')?.dispatchEvent(new Event('submit'));
+      await fixture.whenStable();
+      expect(itemAdded).not.toHaveBeenCalled();
+    });
+
+    it('closes the form with Done and gives the focus back to the "Add item" button', async () => {
+      const { fixture, element } = await setup();
+      document.body.appendChild(fixture.nativeElement);
+      try {
+        await openForm(fixture, element);
+        button(element, 'Done')?.click();
+        fixture.detectChanges();
+        await fixture.whenStable();
+        expect(element.querySelector('app-item-form')).toBeNull();
+        expect(button(element, 'Add item')).toBeDefined();
+        expect(document.activeElement).toBe(button(element, 'Add item'));
+      } finally {
+        document.body.replaceChildren();
+      }
+    });
+
+    it('closes the form with the Escape key', async () => {
+      const { fixture, element } = await setup();
+      await openForm(fixture, element);
+      element
+        .querySelector('#item-name')
+        ?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      fixture.detectChanges();
+      expect(element.querySelector('app-item-form')).toBeNull();
+    });
+
+    it('closes the form and discards what was typed when another container is selected', async () => {
+      const { fixture, element } = await setup();
+      await openForm(fixture, element);
+      typeIn(element, 'item-name', 'Nails');
+
+      const other = createContainer(TOUGH_BOX_27_GAL.id, 'Books', 2000, 0);
+      fixture.componentRef.setInput('container', other);
+      fixture.detectChanges();
+      expect(element.querySelector('app-item-form')).toBeNull();
+
+      await openForm(fixture, element);
+      expect((element.querySelector('#item-name') as HTMLInputElement).value).toBe('');
+    });
+
+    it('keeps the form open, with what was typed, when the same container changes', async () => {
+      const { fixture, element } = await setup();
+      await openForm(fixture, element);
+      typeIn(element, 'item-name', 'Nails');
+      fixture.componentRef.setInput('container', { ...container, items: [item('Cables')] });
+      fixture.detectChanges();
+      expect((element.querySelector('#item-name') as HTMLInputElement).value).toBe('Nails');
+    });
+
+    describe('delete confirmation', () => {
+      async function question(items: Item[]): Promise<string | undefined> {
+        const { fixture, element } = await setupWithItems(items);
+        button(element, 'Delete')?.click();
+        fixture.detectChanges();
+        return element.querySelector('.confirm span')?.textContent?.trim();
+      }
+
+      it('keeps the short question for a container without items', async () => {
+        expect(await question([])).toBe('Delete "Toys"? This cannot be undone.');
+      });
+
+      it('says how many items are deleted with the container', async () => {
+        expect(await question([item('A'), item('B'), item('C'), item('D'), item('E')])).toBe(
+          '"Toys" has 5 items. Delete it and its items? This cannot be undone.',
+        );
+      });
+
+      it('uses the singular for one item, whatever its quantity', async () => {
+        expect(await question([item('Nails', { quantity: 100 })])).toBe(
+          '"Toys" has 1 item. Delete it and its item? This cannot be undone.',
+        );
+      });
     });
   });
 

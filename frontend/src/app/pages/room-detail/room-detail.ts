@@ -6,6 +6,7 @@ import { map } from 'rxjs';
 import { ContainerPanel } from '../../container-panel/container-panel';
 import { stackOf } from '../../core/container-stack';
 import { createContainer, nextContainerName } from '../../core/container.model';
+import { createItem, isValidItemDraft, ItemDraft } from '../../core/item.model';
 import { roomNameSchema } from '../../core/room-name-schema';
 import { RoomSize } from '../../core/room-resize';
 import { RoomStore } from '../../core/room-store';
@@ -47,6 +48,9 @@ export class RoomDetail {
   });
 
   protected readonly saved = signal(false);
+
+  /** The categories used in any room, offered as suggestions when adding an item. */
+  protected readonly categories = this.store.categories;
 
   /** The rename field starts with the current name and resets if the room changes. */
   private readonly model = linkedSignal(() => ({ name: this.room()?.name ?? '' }));
@@ -189,6 +193,15 @@ export class RoomDetail {
     const container = this.selectedContainer();
     if (room && container) {
       this.store.renameContainer(room.id, container.id, name);
+    }
+  }
+
+  /** Creates an item from what the user filled in and adds it to the selected container. */
+  protected onItemAdded(draft: ItemDraft): void {
+    const room = this.room();
+    const container = this.selectedContainer();
+    if (room && container && isValidItemDraft(draft)) {
+      this.store.addItem(room.id, container.id, createItem(draft));
     }
   }
 

@@ -1,3 +1,4 @@
+import type { Item } from './item.model';
 import { inchesToMm } from './units';
 import { isValidRoomName, ROOM_NAME_MAX_LENGTH } from './room.model';
 
@@ -45,13 +46,15 @@ export interface Container {
    * The user sees the level as `stackPosition + 1`.
    */
   stackPosition: number;
+  /** The items inside this container, in the order they were added. */
+  items: Item[];
 }
 
 /** Container names follow the same rules as room names. */
 export const CONTAINER_NAME_MAX_LENGTH = ROOM_NAME_MAX_LENGTH;
 export const isValidContainerName = isValidRoomName;
 
-/** Creates a container with rotation 0, alone in its stack. Throws if the name or the type is not valid. */
+/** Creates a container with rotation 0, alone in its stack and with no items. Throws if the name or the type is not valid. */
 export function createContainer(
   typeId: string,
   name: string,
@@ -72,6 +75,7 @@ export function createContainer(
     yMm,
     rotation: 0,
     stackPosition: 0,
+    items: [],
   };
 }
 

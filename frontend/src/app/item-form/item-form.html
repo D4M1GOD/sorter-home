@@ -1,0 +1,90 @@
+<form
+  class="item-form"
+  aria-labelledby="item-form-title"
+  novalidate
+  (submit)="onSubmit($event)"
+  (keydown.escape)="closed.emit()"
+>
+  <h4 id="item-form-title">Add item</h4>
+
+  <div class="field">
+    <label for="item-name">Name</label>
+    <input
+      id="item-name"
+      type="text"
+      autocomplete="off"
+      [formField]="itemForm.name"
+      [attr.aria-invalid]="itemForm.name().touched() && itemForm.name().invalid()"
+      aria-describedby="item-name-status"
+    />
+    <div id="item-name-status" role="alert">
+      @if (itemForm.name().touched() && itemForm.name().invalid()) {
+        @for (error of itemForm.name().errors(); track error.kind) {
+          <!-- The built-in max length error has no message: only show errors with a message. -->
+          @if (error.message) {
+            <p class="field-error">{{ error.message }}</p>
+          }
+        }
+      }
+    </div>
+  </div>
+
+  <div class="field">
+    <label for="item-quantity">Quantity</label>
+    <!-- A text field with a numeric keyboard on phones. The form checks that it is a whole number. -->
+    <input
+      id="item-quantity"
+      type="text"
+      inputmode="numeric"
+      autocomplete="off"
+      [formField]="itemForm.quantity"
+      [attr.aria-invalid]="itemForm.quantity().touched() && itemForm.quantity().invalid()"
+      aria-describedby="item-quantity-status"
+    />
+    <div id="item-quantity-status" role="alert">
+      @if (itemForm.quantity().touched() && itemForm.quantity().invalid()) {
+        @for (error of itemForm.quantity().errors(); track error.kind) {
+          <p class="field-error">{{ error.message }}</p>
+        }
+      }
+    </div>
+  </div>
+
+  <div class="field">
+    <label for="item-description">Description (optional)</label>
+    <textarea
+      id="item-description"
+      rows="3"
+      [formField]="itemForm.description"
+      aria-describedby="item-description-count"
+    ></textarea>
+    <p id="item-description-count" class="counter">
+      {{ model().description.length }}/{{ descriptionMaxLength }}
+    </p>
+  </div>
+
+  <div class="field">
+    <label for="item-category">Category (optional)</label>
+    <!-- Free text. The datalist offers the categories already in use as suggestions. -->
+    <input
+      id="item-category"
+      type="text"
+      autocomplete="off"
+      list="item-category-suggestions"
+      [formField]="itemForm.category"
+    />
+    <datalist id="item-category-suggestions">
+      @for (category of categories(); track category) {
+        <option [value]="category"></option>
+      }
+    </datalist>
+  </div>
+
+  <div class="actions">
+    <button class="button button--primary" type="submit">Add</button>
+    <button class="button" type="button" (click)="closed.emit()">Done</button>
+  </div>
+
+  <!-- Always in the page, empty when there is nothing to say, so screen readers announce changes. -->
+  <p class="status" role="status">{{ message() }}</p>
+</form>

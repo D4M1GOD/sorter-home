@@ -1,5 +1,6 @@
 import { Component, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
+import { roomDeleteQuestion } from '../../core/delete-question';
 import { RoomStore } from '../../core/room-store';
 import { Room } from '../../core/room.model';
 import { formatFeetInches } from '../../core/units';
@@ -18,6 +19,11 @@ export class RoomList {
 
   protected size(room: Room): string {
     return `${formatFeetInches(room.widthMm)} × ${formatFeetInches(room.depthMm)}`;
+  }
+
+  /** The delete question says what the room contains, because it is all deleted with the room. */
+  protected deleteQuestion(room: Room): string {
+    return roomDeleteQuestion(room);
   }
 
   protected askDelete(id: string): void {

@@ -1,0 +1,50 @@
+:host {
+  display: block;
+}
+
+.empty {
+  margin: 0;
+  color: #4b5563;
+}
+
+.items {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.item {
+  padding: 0.5rem 0;
+  border-top: 1px solid #e5e7eb;
+}
+
+// The name on the left and the quantity on the right. A long name wraps and the quantity stays whole.
+.item-head {
+  display: flex;
+  gap: 0.5rem;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.item-name {
+  min-width: 0;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.item-quantity {
+  flex: none;
+}
+
+.item-category,
+.item-description {
+  margin: 0.25rem 0 0;
+  color: #4b5563;
+  font-size: 0.875rem;
+  overflow-wrap: anywhere;
+}
+
+// Keeps the line breaks the user typed in the description.
+.item-description {
+  white-space: pre-line;
+}

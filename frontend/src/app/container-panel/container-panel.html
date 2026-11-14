@@ -43,9 +43,23 @@
     <p class="notice" role="status">{{ notice() }}</p>
   </div>
 
+  <section class="items" aria-labelledby="container-items-title">
+    <h3 id="container-items-title">Items ({{ container().items.length }})</h3>
+    @if (addingItem()) {
+      <app-item-form
+        [categories]="categories()"
+        (added)="itemAdded.emit($event)"
+        (closed)="closeItemForm()"
+      />
+    } @else {
+      <button #addItemButton class="button" type="button" (click)="openItemForm()">Add item</button>
+    }
+    <app-item-list [items]="container().items" />
+  </section>
+
   @if (confirming()) {
     <div class="confirm" role="alert">
-      <span>Delete "{{ container().name }}"? This cannot be undone.</span>
+      <span>{{ deleteQuestion() }}</span>
       <button class="button button--danger" type="button" (click)="confirmDelete()">
         Yes, delete
       </button>
