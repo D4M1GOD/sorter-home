@@ -54,7 +54,20 @@
     } @else {
       <button #addItemButton class="button" type="button" (click)="openItemForm()">Add item</button>
     }
-    <app-item-list [items]="container().items" />
+    <!-- Always in the page, empty when there is nothing to say, so screen readers announce changes. -->
+    <p class="item-notice" role="status">{{ itemNotice() }}</p>
+    <app-item-list
+      [items]="container().items"
+      [editingId]="editingItemId()"
+      [deletingId]="deletingItemId()"
+      [categories]="categories()"
+      (editRequested)="startItemEdit($event)"
+      (editSaved)="saveItemEdit($event)"
+      (editCancelled)="cancelItemEdit()"
+      (deleteRequested)="askItemDelete($event)"
+      (deleteConfirmed)="confirmItemDelete($event)"
+      (deleteCancelled)="cancelItemDelete()"
+    />
   </section>
 
   @if (confirming()) {

@@ -66,6 +66,35 @@ describe('item categories', () => {
       expect(usedCategories(rooms(['Tools', 'Books']))).toEqual(['Books', 'Tools']);
       expect(usedCategories(rooms(['Books']))).toEqual(['Books']);
     });
+
+    describe('ignoring one item (the one being edited)', () => {
+      const withIds = [
+        {
+          containers: [
+            {
+              items: [
+                { id: 'a', category: 'jardin' },
+                { id: 'b', category: 'Tools' },
+              ],
+            },
+          ],
+        },
+        { containers: [{ items: [{ id: 'c', category: 'Jardín' }] }] },
+      ];
+
+      it('does not list a category that only the ignored item uses', () => {
+        expect(usedCategories(withIds, 'b')).toEqual(['jardin']);
+      });
+
+      it('keeps the spelling of the other items when the ignored item had the first one', () => {
+        expect(usedCategories(withIds)).toEqual(['jardin', 'Tools']);
+        expect(usedCategories(withIds, 'a')).toEqual(['Jardín', 'Tools']);
+      });
+
+      it('changes nothing when no item has that id', () => {
+        expect(usedCategories(withIds, 'nope')).toEqual(['jardin', 'Tools']);
+      });
+    });
   });
 
   describe('canonicalCategory', () => {

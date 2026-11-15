@@ -5,7 +5,7 @@
   (submit)="onSubmit($event)"
   (keydown.escape)="closed.emit()"
 >
-  <h4 id="item-form-title">Add item</h4>
+  <h4 id="item-form-title">{{ editing() ? 'Edit item' : 'Add item' }}</h4>
 
   <div class="field">
     <label for="item-name">Name</label>
@@ -81,8 +81,10 @@
   </div>
 
   <div class="actions">
-    <button class="button button--primary" type="submit">Add</button>
-    <button class="button" type="button" (click)="closed.emit()">Done</button>
+    <button class="button button--primary" type="submit">{{ editing() ? 'Save' : 'Add' }}</button>
+    <button class="button" type="button" (click)="closed.emit()">
+      {{ editing() ? 'Cancel' : 'Done' }}
+    </button>
   </div>
 
   <!-- Always in the page, empty when there is nothing to say, so screen readers announce changes. -->

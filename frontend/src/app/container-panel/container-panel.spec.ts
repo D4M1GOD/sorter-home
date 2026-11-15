@@ -43,10 +43,18 @@ describe('ContainerPanel', () => {
     expect(input(element).value).toBe('Toys');
   });
 
-  it('offers Rotate 90°, Add item and Delete, and no other actions in this step', async () => {
-    const { element } = await setup();
-    const labels = Array.from(element.querySelectorAll('button')).map((b) => b.textContent?.trim());
-    expect(labels).toEqual(['Rotate 90°', 'Add item', 'Delete']);
+  it('offers Rotate 90°, Add item and Delete, plus Edit and Delete for each item, and no other actions', async () => {
+    const { fixture, element } = await setup();
+    const labels = () =>
+      Array.from(element.querySelectorAll('button')).map(
+        (b) => b.getAttribute('aria-label') ?? b.textContent?.trim(),
+      );
+    expect(labels()).toEqual(['Rotate 90°', 'Add item', 'Delete']);
+
+    const hammer = { id: 'item-1', name: 'Hammer', quantity: 1, description: '', category: '' };
+    fixture.componentRef.setInput('container', { ...container, items: [hammer] });
+    fixture.detectChanges();
+    expect(labels()).toEqual(['Rotate 90°', 'Add item', 'Edit Hammer', 'Delete Hammer', 'Delete']);
   });
 
   describe('rotate', () => {
@@ -369,6 +377,394 @@ describe('ContainerPanel', () => {
       fixture.componentRef.setInput('container', { ...container, items: [item('Cables')] });
       fixture.detectChanges();
       expect((element.querySelector('#item-name') as HTMLInputElement).value).toBe('Nails');
+    });
+
+    describe('editing and removing an item', () => {
+      const nails = item('Nails', { quantity: 100, category: 'Hardware' });
+      const hammer = item('Hammer');
+      const cables = item('Cables');
+
+      /** A panel attached to the page (so the focus can be checked) with three items. */
+      async function setupAttached(items: Item[] = [nails, hammer, cables]) {
+        const result = await setupWithItems(items);
+        document.body.appendChild(result.fixture.nativeElement);
+        const itemEdited = vi.fn();
+        const itemRemoved = vi.fn();
+        result.fixture.componentInstance.itemEdited.subscribe(itemEdited);
+        result.fixture.componentInstance.itemRemoved.subscribe(itemRemoved);
+        return { ...result, itemEdited, itemRemoved };
+      }
+
+      afterEach(() => {
+        document.body.replaceChildren();
+      });
+
+      function iconButton(element: HTMLElement, label: string): HTMLButtonElement {
+        return element.querySelector(`button[aria-label="${label}"]`) as HTMLButtonElement;
+      }
+
+      async function click(fixture: ComponentFixture<unknown>, target: HTMLElement | undefined) {
+        target?.click();
+        fixture.detectChanges();
+        await fixture.whenStable();
+      }
+
+      async function submitEdit(fixture: ComponentFixture<unknown>, element: HTMLElement) {
+        element.querySelector('app-item-form form')?.dispatchEvent(new Event('submit'));
+        await fixture.whenStable();
+        fixture.detectChanges();
+        await fixture.whenStable();
+      }
+
+      function itemNotice(element: HTMLElement): string | undefined {
+        return element.querySelector('.item-notice')?.textContent?.trim();
+      }
+
+      it('has an empty status area for the items, before the list', async () => {
+        const { element } = await setupAttached();
+        const notice = element.querySelector('.items .item-notice') as HTMLElement;
+        expect(notice.getAttribute('role')).toBe('status');
+        expect(notice.textContent?.trim()).toBe('');
+        const list = element.querySelector('.items app-item-list') as Element;
+        expect(notice.compareDocumentPosition(list) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      });
+
+      describe('edit', () => {
+        it('opens the form in the row of the item, with its data and the focus on the name', async () => {
+          const { fixture, element } = await setupAttached();
+          await click(fixture, iconButton(element, 'Edit Nails'));
+          const row = element.querySelector('.item app-item-form')?.closest('.item') as HTMLElement;
+          expect(row.querySelector('h4')?.textContent?.trim()).toBe('Edit item');
+          expect((element.querySelector('#item-name') as HTMLInputElement).value).toBe('Nails');
+          expect((element.querySelector('#item-quantity') as HTMLInputElement).value).toBe('100');
+          expect(document.activeElement).toBe(element.querySelector('#item-name'));
+          // The "Add item" button stays where it was: the form is in the row, not in its place.
+          expect(button(element, 'Add item')).toBeDefined();
+          expect(element.querySelectorAll('app-item-form').length).toBe(1);
+        });
+
+        it('passes the categories in use to the edit form', async () => {
+          const { fixture, element } = await setupAttached();
+          fixture.componentRef.setInput('categories', ['Hardware', 'Navidad']);
+          await click(fixture, iconButton(element, 'Edit Nails'));
+          const options = Array.from(element.querySelectorAll('datalist option')).map((o) =>
+            o.getAttribute('value'),
+          );
+          expect(options).toEqual(['Hardware', 'Navidad']);
+        });
+
+        it('emits "itemEdited" with the id and the new values, saves nothing by itself and closes the form', async () => {
+          const { fixture, element, itemEdited, itemAdded } = await setupAttached();
+          await click(fixture, iconButton(element, 'Edit Nails'));
+          typeIn(element, 'item-name', '  Screws ');
+          typeIn(element, 'item-quantity', '85');
+          await submitEdit(fixture, element);
+          expect(itemEdited).toHaveBeenCalledTimes(1);
+          expect(itemEdited).toHaveBeenCalledWith({
+            itemId: nails.id,
+            draft: { name: 'Screws', quantity: 85, description: '', category: 'Hardware' },
+          });
+          expect(itemAdded).not.toHaveBeenCalled();
+          expect(element.querySelector('app-item-form')).toBeNull();
+          // The panel does not save: the row shows the item it was given.
+          expect(iconButton(element, 'Edit Nails')).not.toBeNull();
+        });
+
+        it('says "Saved <name>" and gives the focus to the "Edit" button of that row', async () => {
+          const { fixture, element } = await setupAttached();
+          await click(fixture, iconButton(element, 'Edit Nails'));
+          await submitEdit(fixture, element);
+          expect(itemNotice(element)).toBe('Saved Nails');
+          expect(document.activeElement).toBe(iconButton(element, 'Edit Nails'));
+        });
+
+        it('gives the focus to the "Edit" button of the row in its new place when the name changed', async () => {
+          const { fixture, element, itemEdited } = await setupAttached();
+          // The page saves: here the test does it, giving the panel the changed item.
+          itemEdited.mockImplementation(({ itemId, draft }) => {
+            fixture.componentRef.setInput('container', {
+              ...container,
+              items: [nails, hammer, cables].map((i) => (i.id === itemId ? { ...i, ...draft } : i)),
+            });
+          });
+          await click(fixture, iconButton(element, 'Edit Nails'));
+          typeIn(element, 'item-name', 'Anvil');
+          await submitEdit(fixture, element);
+          const names = Array.from(element.querySelectorAll('.item-name')).map((n) =>
+            n.textContent?.trim(),
+          );
+          expect(names).toEqual(['Anvil', 'Cables', 'Hammer']);
+          expect(itemNotice(element)).toBe('Saved Anvil');
+          expect(document.activeElement).toBe(iconButton(element, 'Edit Anvil'));
+        });
+
+        it('does not emit and keeps the form open when it has errors', async () => {
+          const { fixture, element, itemEdited } = await setupAttached();
+          await click(fixture, iconButton(element, 'Edit Nails'));
+          typeIn(element, 'item-name', '   ');
+          await submitEdit(fixture, element);
+          expect(itemEdited).not.toHaveBeenCalled();
+          expect(element.querySelector('app-item-form')).not.toBeNull();
+          expect(itemNotice(element)).toBe('');
+        });
+
+        it('closes with Cancel, without saving, and gives the focus back to "Edit"', async () => {
+          const { fixture, element, itemEdited } = await setupAttached();
+          await click(fixture, iconButton(element, 'Edit Nails'));
+          typeIn(element, 'item-name', 'Screws');
+          await click(fixture, button(element, 'Cancel'));
+          expect(itemEdited).not.toHaveBeenCalled();
+          expect(element.querySelector('app-item-form')).toBeNull();
+          expect(itemNotice(element)).toBe('');
+          expect(document.activeElement).toBe(iconButton(element, 'Edit Nails'));
+        });
+
+        it('closes with the Escape key and gives the focus back to "Edit"', async () => {
+          const { fixture, element, itemEdited } = await setupAttached();
+          await click(fixture, iconButton(element, 'Edit Nails'));
+          element
+            .querySelector('#item-name')
+            ?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+          fixture.detectChanges();
+          await fixture.whenStable();
+          expect(itemEdited).not.toHaveBeenCalled();
+          expect(element.querySelector('app-item-form')).toBeNull();
+          expect(document.activeElement).toBe(iconButton(element, 'Edit Nails'));
+        });
+
+        it('keeps the form open, with what was typed, when the same container changes', async () => {
+          const { fixture, element } = await setupAttached();
+          await click(fixture, iconButton(element, 'Edit Nails'));
+          typeIn(element, 'item-name', 'Screws');
+          fixture.componentRef.setInput('container', {
+            ...container,
+            name: 'Workshop',
+            items: [nails, hammer, cables],
+          });
+          fixture.detectChanges();
+          expect((element.querySelector('#item-name') as HTMLInputElement).value).toBe('Screws');
+        });
+      });
+
+      describe('remove', () => {
+        it('does not remove on the first click: it asks inline, with the focus on "Cancel"', async () => {
+          const { fixture, element, itemRemoved } = await setupAttached();
+          await click(fixture, iconButton(element, 'Delete Nails'));
+          expect(itemRemoved).not.toHaveBeenCalled();
+          const confirm = element.querySelector('.item .confirm') as HTMLElement;
+          expect(confirm.getAttribute('role')).toBe('alert');
+          expect(confirm.querySelector('span')?.textContent?.trim()).toBe(
+            'Delete "Nails"? This cannot be undone.',
+          );
+          expect(document.activeElement).toBe(element.querySelector('.item-cancel-delete'));
+          expect(document.activeElement?.textContent?.trim()).toBe('Cancel');
+        });
+
+        it('emits "itemRemoved" with the id after "Yes, delete", and says "Deleted <name>"', async () => {
+          const { fixture, element, itemRemoved } = await setupAttached();
+          await click(fixture, iconButton(element, 'Delete Nails'));
+          await click(fixture, element.querySelector('.item-confirm-delete') as HTMLButtonElement);
+          expect(itemRemoved).toHaveBeenCalledTimes(1);
+          expect(itemRemoved).toHaveBeenCalledWith(nails.id);
+          expect(element.querySelector('.item .confirm')).toBeNull();
+          expect(itemNotice(element)).toBe('Deleted Nails');
+        });
+
+        it('cancels with Cancel or Escape, without removing, and gives the focus back to "Delete"', async () => {
+          const { fixture, element, itemRemoved } = await setupAttached();
+          await click(fixture, iconButton(element, 'Delete Nails'));
+          await click(fixture, element.querySelector('.item-cancel-delete') as HTMLButtonElement);
+          expect(element.querySelector('.item .confirm')).toBeNull();
+          expect(document.activeElement).toBe(iconButton(element, 'Delete Nails'));
+
+          await click(fixture, iconButton(element, 'Delete Nails'));
+          element
+            .querySelector('.item-cancel-delete')
+            ?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+          fixture.detectChanges();
+          await fixture.whenStable();
+          expect(element.querySelector('.item .confirm')).toBeNull();
+          expect(document.activeElement).toBe(iconButton(element, 'Delete Nails'));
+          expect(itemRemoved).not.toHaveBeenCalled();
+          expect(itemNotice(element)).toBe('');
+        });
+
+        describe('focus after removing', () => {
+          /** Removes the item with this name; the test plays the page and takes it out of the list. */
+          async function remove(name: string, items: Item[]) {
+            const result = await setupAttached(items);
+            result.itemRemoved.mockImplementation((itemId: string) => {
+              result.fixture.componentRef.setInput('container', {
+                ...container,
+                items: items.filter((i) => i.id !== itemId),
+              });
+            });
+            await click(result.fixture, iconButton(result.element, `Delete ${name}`));
+            await click(
+              result.fixture,
+              result.element.querySelector('.item-confirm-delete') as HTMLButtonElement,
+            );
+            return result;
+          }
+
+          // The rows are shown as Cables, Hammer, Nails.
+          it('goes to the "Edit" button of the next row', async () => {
+            const { element } = await remove('Cables', [nails, hammer, cables]);
+            expect(document.activeElement).toBe(iconButton(element, 'Edit Hammer'));
+            expect(element.querySelector('.items h3')?.textContent?.trim()).toBe('Items (2)');
+          });
+
+          it('goes to the "Edit" button of the row before when the last row is removed', async () => {
+            const { element } = await remove('Nails', [nails, hammer, cables]);
+            expect(document.activeElement).toBe(iconButton(element, 'Edit Hammer'));
+          });
+
+          it('goes to the "Add item" button when the list is left empty', async () => {
+            const { element } = await remove('Nails', [nails]);
+            expect(element.textContent).toContain('No items yet.');
+            expect(document.activeElement).toBe(button(element, 'Add item'));
+          });
+        });
+      });
+
+      describe('only one thing open at a time', () => {
+        function open(element: HTMLElement) {
+          return {
+            addForm: element.querySelector('.items > app-item-form') !== null,
+            editForm: element.querySelector('.item app-item-form') !== null,
+            itemConfirm: element.querySelector('.item .confirm') !== null,
+          };
+        }
+
+        it('"Edit" on another row closes the first edit form and discards what was typed', async () => {
+          const { fixture, element, itemEdited } = await setupAttached();
+          await click(fixture, iconButton(element, 'Edit Nails'));
+          typeIn(element, 'item-name', 'Typed');
+          await click(fixture, iconButton(element, 'Edit Hammer'));
+          expect(element.querySelectorAll('app-item-form').length).toBe(1);
+          expect((element.querySelector('#item-name') as HTMLInputElement).value).toBe('Hammer');
+          expect(itemEdited).not.toHaveBeenCalled();
+
+          await click(fixture, iconButton(element, 'Edit Nails'));
+          expect((element.querySelector('#item-name') as HTMLInputElement).value).toBe('Nails');
+        });
+
+        it('"Delete" on a row closes the edit form of another row', async () => {
+          const { fixture, element } = await setupAttached();
+          await click(fixture, iconButton(element, 'Edit Nails'));
+          await click(fixture, iconButton(element, 'Delete Hammer'));
+          expect(open(element)).toEqual({ addForm: false, editForm: false, itemConfirm: true });
+        });
+
+        it('"Edit" on a row closes the delete confirmation of another row', async () => {
+          const { fixture, element, itemRemoved } = await setupAttached();
+          await click(fixture, iconButton(element, 'Delete Hammer'));
+          await click(fixture, iconButton(element, 'Edit Nails'));
+          expect(open(element)).toEqual({ addForm: false, editForm: true, itemConfirm: false });
+          expect(itemRemoved).not.toHaveBeenCalled();
+        });
+
+        it('"Delete" on another row moves the confirmation to that row', async () => {
+          const { fixture, element } = await setupAttached();
+          await click(fixture, iconButton(element, 'Delete Hammer'));
+          await click(fixture, iconButton(element, 'Delete Nails'));
+          expect(element.querySelectorAll('.item .confirm').length).toBe(1);
+          expect(element.querySelector('.item .confirm span')?.textContent).toContain('"Nails"');
+        });
+
+        it('"Add item" closes an edit form or a delete confirmation', async () => {
+          const { fixture, element } = await setupAttached();
+          await click(fixture, iconButton(element, 'Edit Nails'));
+          await click(fixture, button(element, 'Add item'));
+          expect(open(element)).toEqual({ addForm: true, editForm: false, itemConfirm: false });
+          expect((element.querySelector('#item-name') as HTMLInputElement).value).toBe('');
+
+          await click(fixture, button(element, 'Done'));
+          await click(fixture, iconButton(element, 'Delete Nails'));
+          await click(fixture, button(element, 'Add item'));
+          expect(open(element)).toEqual({ addForm: true, editForm: false, itemConfirm: false });
+        });
+
+        it('"Edit" or "Delete" on a row closes the "Add item" form and discards what was typed', async () => {
+          const { fixture, element, itemAdded } = await setupAttached();
+          await click(fixture, button(element, 'Add item'));
+          typeIn(element, 'item-name', 'Typed');
+          await click(fixture, iconButton(element, 'Edit Nails'));
+          expect(open(element)).toEqual({ addForm: false, editForm: true, itemConfirm: false });
+          expect(button(element, 'Add item')).toBeDefined();
+
+          await click(fixture, button(element, 'Add item'));
+          expect((element.querySelector('#item-name') as HTMLInputElement).value).toBe('');
+          await click(fixture, iconButton(element, 'Delete Nails'));
+          expect(open(element)).toEqual({ addForm: false, editForm: false, itemConfirm: true });
+          expect(itemAdded).not.toHaveBeenCalled();
+        });
+
+        it('closes the edit form or the confirmation, and discards what was typed, when another container is selected', async () => {
+          const { fixture, element } = await setupAttached();
+          const other = { ...createContainer(TOUGH_BOX_27_GAL.id, 'Books', 2000, 0), items: [nails] };
+
+          await click(fixture, iconButton(element, 'Edit Nails'));
+          typeIn(element, 'item-name', 'Typed');
+          fixture.componentRef.setInput('container', other);
+          fixture.detectChanges();
+          expect(open(element)).toEqual({ addForm: false, editForm: false, itemConfirm: false });
+
+          await click(fixture, iconButton(element, 'Delete Nails'));
+          fixture.componentRef.setInput('container', { ...container, items: [nails] });
+          fixture.detectChanges();
+          expect(open(element)).toEqual({ addForm: false, editForm: false, itemConfirm: false });
+        });
+      });
+
+      describe('the message', () => {
+        async function saved() {
+          const result = await setupAttached();
+          await click(result.fixture, iconButton(result.element, 'Edit Nails'));
+          await submitEdit(result.fixture, result.element);
+          expect(itemNotice(result.element)).toBe('Saved Nails');
+          return result;
+        }
+
+        it('stays in the same element, so screen readers announce the change', async () => {
+          const result = await setupAttached();
+          const before = result.element.querySelector('.item-notice');
+          await click(result.fixture, iconButton(result.element, 'Edit Nails'));
+          await submitEdit(result.fixture, result.element);
+          expect(result.element.querySelector('.item-notice')).toBe(before);
+        });
+
+        it('is cleared when another edit, a delete or "Add item" starts', async () => {
+          for (const start of ['Edit Hammer', 'Delete Hammer']) {
+            const { fixture, element } = await saved();
+            await click(fixture, iconButton(element, start));
+            expect(itemNotice(element)).toBe('');
+            document.body.replaceChildren();
+          }
+          const { fixture, element } = await saved();
+          await click(fixture, button(element, 'Add item'));
+          expect(itemNotice(element)).toBe('');
+        });
+
+        it('is cleared when another container is selected', async () => {
+          const { fixture, element } = await saved();
+          fixture.componentRef.setInput(
+            'container',
+            createContainer(TOUGH_BOX_27_GAL.id, 'Books', 2000, 0),
+          );
+          fixture.detectChanges();
+          expect(itemNotice(element)).toBe('');
+        });
+      });
+
+      it('never uses window.confirm to remove an item', async () => {
+        const confirmSpy = vi.spyOn(window, 'confirm');
+        const { fixture, element } = await setupAttached();
+        await click(fixture, iconButton(element, 'Delete Nails'));
+        await click(fixture, element.querySelector('.item-confirm-delete') as HTMLButtonElement);
+        expect(confirmSpy).not.toHaveBeenCalled();
+        confirmSpy.mockRestore();
+      });
     });
 
     describe('delete confirmation', () => {

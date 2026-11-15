@@ -888,6 +888,169 @@ describe('RoomDetail', () => {
       // Its category was only used by the deleted items, so it is no longer suggested.
       expect(store.categories()).toEqual([]);
     });
+
+    describe('editing and removing', () => {
+      function iconButton(element: HTMLElement, label: string): HTMLButtonElement {
+        return element.querySelector(
+          `app-container-panel button[aria-label="${label}"]`,
+        ) as HTMLButtonElement;
+      }
+
+      function names(element: HTMLElement): (string | undefined)[] {
+        return Array.from(element.querySelectorAll('.item-name')).map((n) => n.textContent?.trim());
+      }
+
+      /** Opens the room with "Nails", "Cables" and "Batteries" (added in that order) in "Toys". */
+      async function openWithItems() {
+        const opened = await openWithContainers();
+        const { fixture, element } = opened;
+        await addItem(fixture, element, { name: 'Nails', quantity: '100', category: 'Hardware' });
+        await addItem(fixture, element, { name: 'Cables' });
+        await addItem(fixture, element, { name: 'Batteries' });
+        panelButton(element, 'Done')?.click();
+        await fixture.whenStable();
+        return opened;
+      }
+
+      async function saveEdit(fixture: ComponentFixture<unknown>, element: HTMLElement) {
+        element.querySelector('.item app-item-form form')?.dispatchEvent(new Event('submit'));
+        await fixture.whenStable();
+      }
+
+      it('edits an item: saves it, shows it in its new place and keeps the stored order', async () => {
+        const { store, room, toys, fixture, element } = await openWithItems();
+        const before = itemsOf(store, room.id, toys.id);
+
+        iconButton(element, 'Edit Cables').click();
+        await fixture.whenStable();
+        expect((element.querySelector('#item-name') as HTMLInputElement).value).toBe('Cables');
+        typeIn(element, 'item-name', ' Zip ties ');
+        typeIn(element, 'item-quantity', '0');
+        typeIn(element, 'item-description', 'Black\n8 in');
+        typeIn(element, 'item-category', 'hardware');
+        await saveEdit(fixture, element);
+
+        const edited = {
+          id: before[1].id,
+          name: 'Zip ties',
+          quantity: 0,
+          description: 'Black\n8 in',
+          category: 'Hardware', // the spelling of the other item is reused
+        };
+        // Same id and same place in the stored order (the order the items were added in).
+        expect(itemsOf(store, room.id, toys.id)).toEqual([before[0], edited, before[2]]);
+        expect(itemsOf(new RoomStore(), room.id, toys.id)).toEqual([before[0], edited, before[2]]);
+        // On screen the list is still alphabetical.
+        expect(names(element)).toEqual(['Batteries', 'Nails', 'Zip ties']);
+        expect(element.querySelectorAll('.item-quantity')[2].textContent?.trim()).toBe('None left');
+        expect(element.querySelector('app-item-form')).toBeNull();
+        expect(element.querySelector('.item-notice')?.textContent?.trim()).toBe('Saved Zip ties');
+        expect(element.querySelector('.items h3')?.textContent?.trim()).toBe('Items (3)');
+      });
+
+      it('saves nothing when the edit form has errors or is cancelled', async () => {
+        const { store, room, toys, fixture, element } = await openWithItems();
+        const before = itemsOf(store, room.id, toys.id);
+
+        iconButton(element, 'Edit Cables').click();
+        await fixture.whenStable();
+        typeIn(element, 'item-quantity', '10000');
+        await saveEdit(fixture, element);
+        expect(element.querySelector('.item app-item-form .field-error')?.textContent).toContain(
+          'whole number',
+        );
+        expect(itemsOf(store, room.id, toys.id)).toEqual(before);
+
+        typeIn(element, 'item-quantity', '5');
+        panelButton(element, 'Cancel')?.click();
+        await fixture.whenStable();
+        expect(element.querySelector('app-item-form')).toBeNull();
+        expect(itemsOf(store, room.id, toys.id)).toEqual(before);
+      });
+
+      it('changes the spelling of a category that only that item uses, and the suggestions follow', async () => {
+        const { store, room, toys, fixture, element } = await openWithItems();
+        iconButton(element, 'Edit Nails').click();
+        await fixture.whenStable();
+        typeIn(element, 'item-category', 'HARDWARE');
+        await saveEdit(fixture, element);
+        expect(itemsOf(store, room.id, toys.id)[0].category).toBe('HARDWARE');
+        expect(store.categories()).toEqual(['HARDWARE']);
+
+        iconButton(element, 'Edit Nails').click();
+        await fixture.whenStable();
+        typeIn(element, 'item-category', '');
+        await saveEdit(fixture, element);
+        expect(store.categories()).toEqual([]);
+      });
+
+      it('removes an item only after the inline confirmation, and saves the change', async () => {
+        const { store, room, toys, fixture, element } = await openWithItems();
+        const before = itemsOf(store, room.id, toys.id);
+
+        iconButton(element, 'Delete Cables').click();
+        await fixture.whenStable();
+        expect(element.querySelector('.item .confirm span')?.textContent?.trim()).toBe(
+          'Delete "Cables"? This cannot be undone.',
+        );
+        expect(itemsOf(store, room.id, toys.id)).toEqual(before);
+
+        panelButton(element, 'Cancel')?.click();
+        await fixture.whenStable();
+        expect(itemsOf(store, room.id, toys.id)).toEqual(before);
+
+        iconButton(element, 'Delete Cables').click();
+        await fixture.whenStable();
+        (element.querySelector('.item-confirm-delete') as HTMLButtonElement).click();
+        await fixture.whenStable();
+
+        expect(itemsOf(store, room.id, toys.id)).toEqual([before[0], before[2]]);
+        expect(itemsOf(new RoomStore(), room.id, toys.id)).toEqual([before[0], before[2]]);
+        expect(names(element)).toEqual(['Batteries', 'Nails']);
+        expect(element.querySelector('.items h3')?.textContent?.trim()).toBe('Items (2)');
+        expect(element.querySelector('.item-notice')?.textContent?.trim()).toBe('Deleted Cables');
+        // The container is still there: only the item was removed.
+        expect(store.getById(room.id)?.containers.some((c) => c.id === toys.id)).toBe(true);
+      });
+
+      it('stops suggesting a category when its last item is removed', async () => {
+        const { store, fixture, element } = await openWithItems();
+        expect(store.categories()).toEqual(['Hardware']);
+        iconButton(element, 'Delete Nails').click();
+        await fixture.whenStable();
+        (element.querySelector('.item-confirm-delete') as HTMLButtonElement).click();
+        await fixture.whenStable();
+        expect(store.categories()).toEqual([]);
+      });
+
+      it('closes the edit form and discards what was typed when another container is selected', async () => {
+        const { store, room, toys, books, fixture, element } = await openWithItems();
+        const before = itemsOf(store, room.id, toys.id);
+        iconButton(element, 'Edit Cables').click();
+        await fixture.whenStable();
+        typeIn(element, 'item-name', 'Typed');
+
+        await select(fixture, books.id);
+        expect(element.querySelector('app-item-form')).toBeNull();
+        await select(fixture, toys.id);
+        expect(element.querySelector('app-item-form')).toBeNull();
+        expect(names(element)).toEqual(['Batteries', 'Cables', 'Nails']);
+        expect(itemsOf(store, room.id, toys.id)).toEqual(before);
+      });
+
+      it('does not rotate the container when the user types "r" in the edit form', async () => {
+        const { store, room, toys, fixture, element } = await openWithItems();
+        iconButton(element, 'Edit Cables').click();
+        await fixture.whenStable();
+        for (const id of ['item-name', 'item-description']) {
+          element
+            .querySelector(`#${id}`)
+            ?.dispatchEvent(new KeyboardEvent('keydown', { key: 'r', bubbles: true }));
+        }
+        await fixture.whenStable();
+        expect(store.getById(room.id)?.containers.find((c) => c.id === toys.id)?.rotation).toBe(0);
+      });
+    });
   });
 
   it('shows "Room not found" for an unknown id', async () => {
