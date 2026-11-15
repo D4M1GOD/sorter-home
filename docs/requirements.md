@@ -1,4 +1,4 @@
-# SorterHome — Requirements (v0.12)
+# SorterHome — Requirements (v0.13)
 
 Last updated: 2026-11-14
 Status: Requirements for v1 are agreed. Items marked **Open** still need a decision from the project owner.
@@ -35,7 +35,7 @@ The container panel has an **"Add item"** button (phase 3). Each item has:
 - Name (required): at most **60 characters**, trimmed (the same rule as room and container names). Two items in the same container may share a name.
 - Quantity (required): a whole number from **0 to 9999**, **pre-filled with 1** in the form. An item with quantity 0 stays in its container and shows the label "None left", so the user still knows where it belongs and what to restock.
 - Description (optional): free text for details that the name does not cover, for example "USB-C cable, 2 m, white". Multi-line text, at most **500 characters**. **Open (phase 4):** whether search also looks inside descriptions.
-- Category (optional): a single category per item, written as free text **with suggestions** taken from the categories already used, at most **40 characters**, trimmed. Categories are **global across rooms**. There is no separate list of categories: the suggestions come from the existing items, so a category stops being suggested when its last item is removed. A saved category is trimmed and its inner runs of spaces become one space. Matching ignores upper/lower case, accents (diacritics) and repeated spaces: "Jardín", "jardin" and "Jardin" are the same category, and so are "Navidad" and "navidad". A new item reuses the spelling of the existing category.
+- Category (optional): a single category per item, written as free text **with suggestions** taken from the categories already used, at most **40 characters**, trimmed. Categories are **global across rooms**. There is no separate list of categories: the suggestions come from the existing items, so a category stops being suggested when its last item is removed. A saved category is trimmed and its inner runs of spaces become one space. Matching ignores upper/lower case, accents (diacritics) and repeated spaces: "Jardín", "jardin" and "Jardin" are the same category, and so are "Navidad" and "navidad". A new item reuses the spelling of the existing category. When an item is edited, its category is compared with the categories of all the **other** items: if one of them already uses it, that spelling is reused; if no other item uses it, what the user typed is saved, so the spelling of a category with a single item can be corrected. Editing one item never changes the other items; renaming a category across all its items is not possible yet.
 - Photo: **optional but recommended**. Exactly one photo per item, taken with the phone camera or uploaded as a file. The UI should encourage adding one (for example a clear "Add photo" prompt on items without a photo).
 
 ### Items that are out of their container
@@ -88,7 +88,13 @@ localStorage holds about 5 MB in total and one phone photo weighs 2 to 5 MB, so 
   - **Adding several:** "Add" saves the item. The form stays open and clean, with the focus on "Name" and the message "Added <name>", so several items can be added in a row. "Done" or the Escape key closes the form. Selecting another container closes the form and discards what was typed.
   - **Errors:** "Item name is required.", "Item name must have at most 60 characters.", "Quantity is required.", "Quantity must be a whole number from 0 to 9999."
   - **List:** each row shows the name, the quantity ("Qty 3", or "None left" when it is 0), the category and the full description with its line breaks. The rows are in alphabetical order by name, ignoring upper/lower case; this is the display order only, the stored order is the order the items were added in. A container without items shows "No items yet."
+  - **Row buttons:** below the text of each row there are two icon buttons, "Edit" (a pencil) and "Delete" (a trash can), drawn as inline SVG (no icon library). Each one has an accessible name and a tooltip with the item name ("Edit Hammer", "Delete Hammer"), a touch target of 44 × 44 px with space between the two, and a visible focus ring for the keyboard. Their meaning does not rely on color alone. Two items with the same name have buttons with the same name.
 - FR-10: Edit an item, change its quantity, and remove it.
+  - **Edit:** "Edit" opens the item form in place of that row, filled with the data of the item, with the title "Edit item", the buttons "Save" and "Cancel", and the focus on "Name". The fields, limits, category suggestions and errors are the ones of FR-9. The quantity is changed only through this form. The Escape key is the same as "Cancel".
+  - **Save:** "Save" saves the item, closes the form, shows the message "Saved <name>" and puts the focus on the "Edit" button of that row, in its new place if the name changed. "Save" without changes does the same. The item keeps its id and its place in the stored order. The category follows the rule for editing in "Item fields". Nothing is saved until "Save": closing or reloading the page while the form is open leaves the item as it was.
+  - **Remove:** "Delete" asks in the row, in place of the two icon buttons, with the same inline confirmation as containers and rooms (no browser dialogs, no undo): `Delete "Hammer"? This cannot be undone.` with the buttons "Yes, delete" and "Cancel". The focus goes to "Cancel". After "Yes, delete" the message "Deleted <name>" is shown and the focus goes to the "Edit" button of the next row, or of the row before when the last row was removed, or to "Add item" when the list is left empty. "Cancel" or the Escape key closes the confirmation and puts the focus back on the "Delete" button of that row.
+  - **One at a time:** only one of these is open in the items section: the "Add item" form, the edit form of one item, or the delete confirmation of one item. Starting another one closes the one before and discards what was typed. Selecting another container closes it too.
+  - **Messages:** "Saved <name>" and "Deleted <name>" are shown in a status line of the items section, which screen readers announce. The line is cleared when another action starts or another container is selected.
 - FR-10b: Take units of an item out of its container, put them back, or mark them as used (see "Items that are out of their container").
 
 ### Search (phase after items)
@@ -164,7 +170,7 @@ The room plan is drawn with SVG. Reasons: the plan has tens of objects (not thou
    - 2.3 Stacking, stack order — **done**
 3. Items:
    - 3.1 Item model and storage, "Add item" form (name, quantity, description, category), item list in the container panel — **done**
-   - 3.2 Edit an item, change its quantity, remove it
+   - 3.2 Edit an item, change its quantity, remove it — **done**
    - 3.3 Take out, put back and used
    - 3.4 Photo (IndexedDB, reduced in size before saving, "Add photo" prompt)
 4. Search and filters
@@ -180,3 +186,5 @@ The room plan is drawn with SVG. Reasons: the plan has tens of objects (not thou
 - Review the short UI texts "Valid / Overlaps / Outside room".
 - Verify touch gestures on real devices (Android Chrome, iOS Safari) once the app is deployed; the browser emulation does not reproduce iOS Safari.
 - When the browser storage is full or not available, the write error is ignored: the change stays in memory, the user sees no message, and it is lost when the page is reloaded.
+- Move an item to another container (today the item must be removed and added again).
+- The delete confirmations of containers and rooms lose the keyboard focus when they open, because the "Delete" button is replaced by the confirmation. The confirmation of an item already moves the focus to "Cancel".
