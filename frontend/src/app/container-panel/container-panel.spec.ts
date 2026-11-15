@@ -1,8 +1,14 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { vi } from 'vitest';
 import { createContainer, TOUGH_BOX_27_GAL } from '../core/container.model';
-import { Item } from '../core/item.model';
-import { ContainerPanel } from './container-panel';
+import {
+  Item,
+  markUsedFromInside,
+  markUsedFromOut,
+  putBack,
+  takeOut,
+} from '../core/item.model';
+import { ContainerPanel, ItemUnitsChanged } from './container-panel';
 
 describe('ContainerPanel', () => {
   const container = createContainer(TOUGH_BOX_27_GAL.id, 'Toys', 0, 0);
@@ -51,10 +57,26 @@ describe('ContainerPanel', () => {
       );
     expect(labels()).toEqual(['Rotate 90°', 'Add item', 'Delete']);
 
-    const hammer = { id: 'item-1', name: 'Hammer', quantity: 1, description: '', category: '' };
+    const hammer = {
+      id: 'item-1',
+      name: 'Hammer',
+      quantity: 3,
+      quantityOut: 1,
+      description: '',
+      category: '',
+    };
     fixture.componentRef.setInput('container', { ...container, items: [hammer] });
     fixture.detectChanges();
-    expect(labels()).toEqual(['Rotate 90°', 'Add item', 'Edit Hammer', 'Delete Hammer', 'Delete']);
+    expect(labels()).toEqual([
+      'Rotate 90°',
+      'Add item',
+      'Put back Hammer',
+      'Used Hammer',
+      'Take out Hammer',
+      'Edit Hammer',
+      'Delete Hammer',
+      'Delete',
+    ]);
   });
 
   describe('rotate', () => {
@@ -235,7 +257,15 @@ describe('ContainerPanel', () => {
 
   describe('items', () => {
     function item(name: string, values: Partial<Item> = {}): Item {
-      return { id: `id-${name}`, name, quantity: 1, description: '', category: '', ...values };
+      return {
+        id: `id-${name}`,
+        name,
+        quantity: 1,
+        quantityOut: 0,
+        description: '',
+        category: '',
+        ...values,
+      };
     }
 
     async function setupWithItems(items: Item[]) {
@@ -754,6 +784,313 @@ describe('ContainerPanel', () => {
           );
           fixture.detectChanges();
           expect(itemNotice(element)).toBe('');
+        });
+      });
+
+      describe('take out, put back and used', () => {
+        /** "Screws": 100 units, 20 of them out (80 inside). */
+        const screws = item('Screws', { quantity: 100, quantityOut: 20 });
+
+        /**
+         * A panel with one item (and "Hammer", all inside). The test plays the page: it applies
+         * each change the panel emits and gives the panel the changed item.
+         */
+        async function setupUnits(target: Item = screws) {
+          const items = [target, hammer];
+          const result = await setupAttached(items);
+          const changed = vi.fn(({ itemId, action, units }: ItemUnitsChanged) => {
+            const apply = {
+              'take-out': takeOut,
+              'put-back': putBack,
+              'used-from-out': markUsedFromOut,
+              'used-from-inside': markUsedFromInside,
+            }[action];
+            const current = result.fixture.componentInstance.container().items;
+            result.fixture.componentRef.setInput('container', {
+              ...container,
+              items: current.map((i) => (i.id === itemId ? (apply(i, units) ?? i) : i)),
+            });
+          });
+          result.fixture.componentInstance.itemUnitsChanged.subscribe(changed);
+          return { ...result, changed };
+        }
+
+        function control(element: HTMLElement, label: string): HTMLButtonElement {
+          return iconButton(element, label);
+        }
+
+        /** The quantity text of the row of "Screws" ("Hammer" is the first row). */
+        function screwsQuantity(element: HTMLElement): string | undefined {
+          const row = control(element, 'Edit Screws').closest('.item');
+          return row?.querySelector('.item-quantity')?.textContent?.trim();
+        }
+
+        /** Opens a form from its button, types the units and presses a button of the form. */
+        async function run(
+          fixture: ComponentFixture<unknown>,
+          element: HTMLElement,
+          open: string,
+          units: string,
+          press: string,
+        ) {
+          await click(fixture, control(element, open));
+          typeIn(element, 'item-units', units);
+          const pressed = Array.from(element.querySelectorAll('app-item-units-form button')).find(
+            (b) => b.textContent?.trim() === press,
+          ) as HTMLButtonElement;
+          pressed.click();
+          await fixture.whenStable();
+          fixture.detectChanges();
+          await fixture.whenStable();
+        }
+
+        it('opens the form in the row, with the focus on the quantity, and changes nothing yet', async () => {
+          const { fixture, element, changed } = await setupUnits();
+          await click(fixture, control(element, 'Take out Screws'));
+          const form = element.querySelector('.item app-item-units-form') as HTMLElement;
+          expect(form.querySelector('h4')?.textContent?.trim()).toBe('Take out or use Screws');
+          expect((element.querySelector('#item-units') as HTMLInputElement).value).toBe('80');
+          expect(document.activeElement).toBe(element.querySelector('#item-units'));
+          expect(changed).not.toHaveBeenCalled();
+        });
+
+        it('emits "itemUnitsChanged" with the id, the action and the units, and saves nothing by itself', async () => {
+          const result = await setupAttached([screws]);
+          const changed = vi.fn();
+          result.fixture.componentInstance.itemUnitsChanged.subscribe(changed);
+          await run(result.fixture, result.element, 'Take out Screws', '30', 'Take out');
+          expect(changed).toHaveBeenCalledTimes(1);
+          expect(changed).toHaveBeenCalledWith({ itemId: screws.id, action: 'take-out', units: 30 });
+          expect(result.element.querySelector('app-item-units-form')).toBeNull();
+          // The panel does not save: the row shows the item it was given.
+          expect(result.element.querySelector('.item-out')?.textContent?.trim()).toBe('20 of 100 out');
+        });
+
+        it('emits each of the four actions', async () => {
+          const cases = [
+            ['Take out Screws', 'Take out', 'take-out'],
+            ['Take out Screws', 'Mark as used', 'used-from-inside'],
+            ['Put back Screws', 'Put back', 'put-back'],
+            ['Used Screws', 'Used', 'used-from-out'],
+          ];
+          for (const [open, press, action] of cases) {
+            const { fixture, element, changed } = await setupUnits();
+            await run(fixture, element, open, '5', press);
+            expect(changed).toHaveBeenCalledWith({ itemId: screws.id, action, units: 5 });
+            document.body.replaceChildren();
+          }
+        });
+
+        it('says what was done in the status area', async () => {
+          const cases = [
+            ['Take out Screws', '20', 'Take out', 'Took out 20 of Screws'],
+            ['Take out Screws', '15', 'Mark as used', 'Marked 15 of Screws as used'],
+            ['Put back Screws', '5', 'Put back', 'Put back 5 of Screws'],
+            ['Used Screws', '15', 'Used', 'Marked 15 of Screws as used'],
+          ];
+          for (const [open, units, press, message] of cases) {
+            const { fixture, element } = await setupUnits();
+            const notice = element.querySelector('.item-notice');
+            await run(fixture, element, open, units, press);
+            expect(itemNotice(element)).toBe(message);
+            expect(element.querySelector('.item-notice')).toBe(notice);
+            document.body.replaceChildren();
+          }
+        });
+
+        it('does nothing and keeps the form open when the quantity is wrong', async () => {
+          const { fixture, element, changed } = await setupUnits();
+          await run(fixture, element, 'Take out Screws', '81', 'Take out');
+          expect(changed).not.toHaveBeenCalled();
+          expect(element.querySelector('app-item-units-form .field-error')?.textContent?.trim()).toBe(
+            'Quantity must be a whole number from 1 to 80.',
+          );
+          expect(itemNotice(element)).toBe('');
+        });
+
+        describe('focus after the action', () => {
+          it('take out with units left inside: back to "Take out"', async () => {
+            const { fixture, element } = await setupUnits();
+            await run(fixture, element, 'Take out Screws', '30', 'Take out');
+            expect(element.querySelector('.item-out')?.textContent?.trim()).toBe('50 of 100 out');
+            expect(document.activeElement).toBe(control(element, 'Take out Screws'));
+          });
+
+          it('take out of all the units inside: "Take out" is gone, so to "Put back"', async () => {
+            const { fixture, element } = await setupUnits();
+            await run(fixture, element, 'Take out Screws', '80', 'Take out');
+            expect(control(element, 'Take out Screws')).toBeNull();
+            expect(document.activeElement).toBe(control(element, 'Put back Screws'));
+          });
+
+          it('mark as used with units left inside: back to "Take out"', async () => {
+            const { fixture, element } = await setupUnits();
+            await run(fixture, element, 'Take out Screws', '15', 'Mark as used');
+            expect(screwsQuantity(element)).toBe('Qty 85');
+            expect(document.activeElement).toBe(control(element, 'Take out Screws'));
+          });
+
+          it('mark as used of all the units inside, with units out: to "Put back"', async () => {
+            const { fixture, element } = await setupUnits();
+            await run(fixture, element, 'Take out Screws', '80', 'Mark as used');
+            expect(element.querySelector('.item-out')?.textContent?.trim()).toBe('20 of 20 out');
+            expect(document.activeElement).toBe(control(element, 'Put back Screws'));
+          });
+
+          it('mark as used of the last units of the item: to "Edit"', async () => {
+            const { fixture, element } = await setupUnits(item('Screws', { quantity: 3 }));
+            await run(fixture, element, 'Take out Screws', '3', 'Mark as used');
+            expect(screwsQuantity(element)).toBe('None left');
+            expect(document.activeElement).toBe(control(element, 'Edit Screws'));
+          });
+
+          it('put back with units still out: back to "Put back"', async () => {
+            const { fixture, element } = await setupUnits();
+            await run(fixture, element, 'Put back Screws', '5', 'Put back');
+            expect(document.activeElement).toBe(control(element, 'Put back Screws'));
+          });
+
+          it('put back of all the units out: "Put back" is gone, so to "Take out"', async () => {
+            const { fixture, element } = await setupUnits();
+            await run(fixture, element, 'Put back Screws', '20', 'Put back');
+            expect(control(element, 'Put back Screws')).toBeNull();
+            expect(element.querySelector('.item-out')).toBeNull();
+            expect(document.activeElement).toBe(control(element, 'Take out Screws'));
+          });
+
+          it('used with units still out: back to "Used"', async () => {
+            const { fixture, element } = await setupUnits();
+            await run(fixture, element, 'Used Screws', '15', 'Used');
+            expect(element.querySelector('.item-out')?.textContent?.trim()).toBe('5 of 85 out');
+            expect(document.activeElement).toBe(control(element, 'Used Screws'));
+          });
+
+          it('used of all the units out, with units inside: to "Take out"', async () => {
+            const { fixture, element } = await setupUnits();
+            await run(fixture, element, 'Used Screws', '20', 'Used');
+            expect(document.activeElement).toBe(control(element, 'Take out Screws'));
+          });
+
+          it('used of the last units of the item: to "Edit"', async () => {
+            const { fixture, element } = await setupUnits(
+              item('Screws', { quantity: 4, quantityOut: 4 }),
+            );
+            await run(fixture, element, 'Used Screws', '4', 'Used');
+            expect(screwsQuantity(element)).toBe('None left');
+            expect(document.activeElement).toBe(control(element, 'Edit Screws'));
+          });
+        });
+
+        describe('cancel', () => {
+          it('closes with Cancel or Escape, changes nothing, and gives the focus back to the button that opened it', async () => {
+            for (const open of ['Take out Screws', 'Put back Screws', 'Used Screws']) {
+              const { fixture, element, changed } = await setupUnits();
+              await click(fixture, control(element, open));
+              typeIn(element, 'item-units', '7');
+              await click(fixture, button(element, 'Cancel'));
+              expect(element.querySelector('app-item-units-form')).toBeNull();
+              expect(document.activeElement).toBe(control(element, open));
+
+              await click(fixture, control(element, open));
+              element
+                .querySelector('#item-units')
+                ?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+              fixture.detectChanges();
+              await fixture.whenStable();
+              expect(element.querySelector('app-item-units-form')).toBeNull();
+              expect(document.activeElement).toBe(control(element, open));
+              expect(changed).not.toHaveBeenCalled();
+              expect(itemNotice(element)).toBe('');
+              document.body.replaceChildren();
+            }
+          });
+        });
+
+        describe('only one thing open at a time', () => {
+          function open(element: HTMLElement) {
+            return {
+              addForm: element.querySelector('.items > app-item-form') !== null,
+              editForm: element.querySelector('.item app-item-form') !== null,
+              itemConfirm: element.querySelector('.item .confirm') !== null,
+              unitsForm: element.querySelectorAll('app-item-units-form').length,
+            };
+          }
+          const onlyUnits = { addForm: false, editForm: false, itemConfirm: false, unitsForm: 1 };
+
+          it('another units form replaces the first and discards what was typed', async () => {
+            const { fixture, element, changed } = await setupUnits();
+            await click(fixture, control(element, 'Take out Screws'));
+            typeIn(element, 'item-units', '7');
+            await click(fixture, control(element, 'Take out Hammer'));
+            expect(open(element)).toEqual(onlyUnits);
+            expect(element.querySelector('app-item-units-form h4')?.textContent?.trim()).toBe(
+              'Take out or use Hammer',
+            );
+            await click(fixture, control(element, 'Put back Screws'));
+            expect(open(element)).toEqual(onlyUnits);
+            expect((element.querySelector('#item-units') as HTMLInputElement).value).toBe('20');
+            expect(changed).not.toHaveBeenCalled();
+          });
+
+          it('a units form closes the "Add item" form, an edit form and a delete confirmation', async () => {
+            const { fixture, element } = await setupUnits();
+            await click(fixture, button(element, 'Add item'));
+            await click(fixture, control(element, 'Take out Screws'));
+            expect(open(element)).toEqual(onlyUnits);
+
+            await click(fixture, control(element, 'Edit Hammer'));
+            await click(fixture, control(element, 'Used Screws'));
+            expect(open(element)).toEqual(onlyUnits);
+
+            await click(fixture, control(element, 'Delete Hammer'));
+            await click(fixture, control(element, 'Put back Screws'));
+            expect(open(element)).toEqual(onlyUnits);
+          });
+
+          it('"Add item", "Edit" and "Delete" close a units form', async () => {
+            const { fixture, element, changed } = await setupUnits();
+            const none = { addForm: false, editForm: false, itemConfirm: false, unitsForm: 0 };
+
+            await click(fixture, control(element, 'Take out Screws'));
+            await click(fixture, button(element, 'Add item'));
+            expect(open(element)).toEqual({ ...none, addForm: true });
+
+            await click(fixture, control(element, 'Take out Screws'));
+            await click(fixture, control(element, 'Edit Hammer'));
+            expect(open(element)).toEqual({ ...none, editForm: true });
+
+            await click(fixture, control(element, 'Take out Screws'));
+            await click(fixture, control(element, 'Delete Hammer'));
+            expect(open(element)).toEqual({ ...none, itemConfirm: true });
+            expect(changed).not.toHaveBeenCalled();
+          });
+
+          it('closes the units form when another container is selected', async () => {
+            const { fixture, element } = await setupUnits();
+            await click(fixture, control(element, 'Take out Screws'));
+            fixture.componentRef.setInput('container', {
+              ...createContainer(TOUGH_BOX_27_GAL.id, 'Books', 2000, 0),
+              items: [screws],
+            });
+            fixture.detectChanges();
+            expect(element.querySelector('app-item-units-form')).toBeNull();
+          });
+
+          it('starting a units form clears the last message', async () => {
+            const { fixture, element } = await setupUnits();
+            await run(fixture, element, 'Put back Screws', '5', 'Put back');
+            expect(itemNotice(element)).toBe('Put back 5 of Screws');
+            await click(fixture, control(element, 'Used Screws'));
+            expect(itemNotice(element)).toBe('');
+          });
+        });
+
+        it('the delete confirmation says that units are out', async () => {
+          const { fixture, element } = await setupUnits();
+          await click(fixture, control(element, 'Delete Screws'));
+          expect(element.querySelector('.item .confirm span')?.textContent?.trim()).toBe(
+            'Delete "Screws"? 20 of 100 are out of the container. This cannot be undone.',
+          );
         });
       });
 

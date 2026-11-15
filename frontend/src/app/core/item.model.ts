@@ -8,16 +8,27 @@ import { cleanCategory } from './item-category';
 export interface Item {
   id: string;
   name: string;
-  /** How many units there are: a whole number from 0 to 9999. 0 means "None left". */
+  /**
+   * How many units there are in total, inside the container and out of it: a whole number from
+   * 0 to 9999. 0 means "None left".
+   */
   quantity: number;
+  /**
+   * How many of those units are out of the container for a while: a whole number from 0 to
+   * `quantity`. The units inside are `quantity - quantityOut` (see `unitsInside`).
+   */
+  quantityOut: number;
   /** Free text, it may have several lines. Empty when the item has no description. */
   description: string;
   /** A single category. Empty when the item has no category. */
   category: string;
 }
 
-/** What the user fills in to add an item. The id is created by `createItem`. */
-export type ItemDraft = Omit<Item, 'id'>;
+/**
+ * What the user fills in to add or edit an item. The id is created by `createItem`. The units
+ * that are out are not part of it: they only change with take out, put back and used.
+ */
+export type ItemDraft = Omit<Item, 'id' | 'quantityOut'>;
 
 export const ITEM_NAME_MAX_LENGTH = 60;
 export const ITEM_QUANTITY_MIN = 0;
@@ -76,9 +87,94 @@ export function isValidItemDraft(draft: ItemDraft): boolean {
   );
 }
 
+/** The units out are valid when they are a whole number from 0 to the total quantity. */
+export function isValidQuantityOut(quantityOut: unknown, quantity: number): quantityOut is number {
+  return (
+    typeof quantityOut === 'number' &&
+    Number.isInteger(quantityOut) &&
+    quantityOut >= 0 &&
+    quantityOut <= quantity
+  );
+}
+
+/** How many units of the item are inside its container: the total minus the units that are out. */
+export function unitsInside(item: Pick<Item, 'quantity' | 'quantityOut'>): number {
+  return item.quantity - item.quantityOut;
+}
+
+/** True when `units` is a whole number from 1 to `max`: what the user can move in one action. */
+export function isValidUnits(units: unknown, max: number): units is number {
+  return typeof units === 'number' && Number.isInteger(units) && units >= 1 && units <= max;
+}
+
 /**
- * Creates an item with a new id. The name and the description are trimmed (line breaks inside
- * the description are kept) and the category is cleaned. Throws if a field is not valid.
+ * Reads the units the user typed for take out, put back or used. Only digits are accepted
+ * (surrounding spaces are ignored) and nothing is rounded. Gives null when the text is not a
+ * whole number from 1 to `max`.
+ */
+export function parseUnits(text: string, max: number): number | null {
+  const trimmed = text.trim();
+  if (!/^[0-9]+$/.test(trimmed)) {
+    return null;
+  }
+  const units = Number(trimmed);
+  return isValidUnits(units, max) ? units : null;
+}
+
+/**
+ * Takes units out of the container: they stay part of the total and are counted as out.
+ * Gives null, and changes nothing, when `units` is not a whole number from 1 to the units inside.
+ */
+export function takeOut(item: Item, units: number): Item | null {
+  if (!isValidUnits(units, unitsInside(item))) {
+    return null;
+  }
+  return { ...item, quantityOut: item.quantityOut + units };
+}
+
+/**
+ * Puts units that are out back in the container. Gives null, and changes nothing, when `units`
+ * is not a whole number from 1 to the units that are out.
+ */
+export function putBack(item: Item, units: number): Item | null {
+  if (!isValidUnits(units, item.quantityOut)) {
+    return null;
+  }
+  return { ...item, quantityOut: item.quantityOut - units };
+}
+
+/**
+ * Marks units that are out as used: they will not return, so the total and the units out go
+ * down by the same number. Gives null, and changes nothing, when `units` is not a whole number
+ * from 1 to the units that are out.
+ */
+export function markUsedFromOut(item: Item, units: number): Item | null {
+  if (!isValidUnits(units, item.quantityOut)) {
+    return null;
+  }
+  return {
+    ...item,
+    quantity: item.quantity - units,
+    quantityOut: item.quantityOut - units,
+  };
+}
+
+/**
+ * Marks units that are inside the container as used, without taking them out first: the total
+ * goes down and the units out do not change. Gives null, and changes nothing, when `units` is
+ * not a whole number from 1 to the units inside.
+ */
+export function markUsedFromInside(item: Item, units: number): Item | null {
+  if (!isValidUnits(units, unitsInside(item))) {
+    return null;
+  }
+  return { ...item, quantity: item.quantity - units };
+}
+
+/**
+ * Creates an item with a new id and no units out. The name and the description are trimmed
+ * (line breaks inside the description are kept) and the category is cleaned. Throws if a field
+ * is not valid.
  */
 export function createItem(draft: ItemDraft): Item {
   if (!isValidItemDraft(draft)) {
@@ -88,6 +184,7 @@ export function createItem(draft: ItemDraft): Item {
     id: crypto.randomUUID(),
     name: draft.name.trim(),
     quantity: draft.quantity,
+    quantityOut: 0,
     description: draft.description.trim(),
     category: cleanCategory(draft.category),
   };

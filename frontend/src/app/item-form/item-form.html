@@ -39,8 +39,14 @@
       autocomplete="off"
       [formField]="itemForm.quantity"
       [attr.aria-invalid]="itemForm.quantity().touched() && itemForm.quantity().invalid()"
-      aria-describedby="item-quantity-status"
+      [attr.aria-describedby]="
+        quantityOut() > 0 ? 'item-quantity-out item-quantity-status' : 'item-quantity-status'
+      "
     />
+    @if (quantityOut() > 0) {
+      <!-- The quantity is the total: say how many of those units are out of the container. -->
+      <p id="item-quantity-out" class="hint">{{ quantityOut() }} are out of the container.</p>
+    }
     <div id="item-quantity-status" role="alert">
       @if (itemForm.quantity().touched() && itemForm.quantity().invalid()) {
         @for (error of itemForm.quantity().errors(); track error.kind) {
