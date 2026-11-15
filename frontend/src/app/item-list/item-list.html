@@ -3,17 +3,79 @@
 } @else {
   <ul class="items">
     @for (row of rows(); track row.id) {
-      <li class="item">
-        <div class="item-head">
-          <!-- &ngsp; keeps a space between the two texts, so they are not read as one word. -->
-          <span class="item-name">{{ row.name }}</span
-          >&ngsp;<span class="item-quantity">{{ row.quantity }}</span>
-        </div>
-        @if (row.category) {
-          <p class="item-category">Category: {{ row.category }}</p>
-        }
-        @if (row.description) {
-          <p class="item-description">{{ row.description }}</p>
+      <li class="item" [attr.data-item-id]="row.id">
+        @if (row.id === editingId()) {
+          <!-- The form takes the place of the row while the item is edited. -->
+          <app-item-form
+            [item]="row.item"
+            [categories]="categories()"
+            (saved)="editSaved.emit($event)"
+            (closed)="editCancelled.emit()"
+          />
+        } @else {
+          <div class="item-head">
+            <!-- &ngsp; keeps a space between the two texts, so they are not read as one word. -->
+            <span class="item-name">{{ row.name }}</span
+            >&ngsp;<span class="item-quantity">{{ row.quantity }}</span>
+          </div>
+          @if (row.category) {
+            <p class="item-category">Category: {{ row.category }}</p>
+          }
+          @if (row.description) {
+            <p class="item-description">{{ row.description }}</p>
+          }
+          @if (row.id === deletingId()) {
+            <div class="confirm item-confirm" role="alert" (keydown.escape)="deleteCancelled.emit()">
+              <span>{{ row.deleteQuestion }}</span>
+              <button
+                class="button button--danger item-confirm-delete"
+                type="button"
+                (click)="deleteConfirmed.emit(row.id)"
+              >
+                Yes, delete
+              </button>
+              <button
+                class="button item-cancel-delete"
+                type="button"
+                (click)="deleteCancelled.emit()"
+              >
+                Cancel
+              </button>
+            </div>
+          } @else {
+            <div class="item-actions">
+              <!-- The icons are drawn here (no icon library). The name of each button has the item name. -->
+              <button
+                class="icon-button item-edit"
+                type="button"
+                [attr.aria-label]="'Edit ' + row.name"
+                [attr.title]="'Edit ' + row.name"
+                (click)="editRequested.emit(row.id)"
+              >
+                <!-- Pencil: a slanted body with the tip at the bottom left and a line under the eraser. -->
+                <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                  <path d="M17 3l4 4L7 21H3v-4z" />
+                  <path d="M14 6l4 4" />
+                </svg>
+              </button>
+              <button
+                class="icon-button icon-button--danger item-delete"
+                type="button"
+                [attr.aria-label]="'Delete ' + row.name"
+                [attr.title]="'Delete ' + row.name"
+                (click)="deleteRequested.emit(row.id)"
+              >
+                <!-- Trash can: the lid with its handle, the body and two lines inside. -->
+                <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                  <path d="M4 7h16" />
+                  <path d="M9 7V4h6v3" />
+                  <path d="M6 7l1 13h10l1-13" />
+                  <path d="M10 11v6" />
+                  <path d="M14 11v6" />
+                </svg>
+              </button>
+            </div>
+          }
         }
       </li>
     }

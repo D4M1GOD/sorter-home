@@ -47,6 +47,8 @@
           (removedFromStack)="removeSelectedFromStack()"
           (renamed)="onContainerRenamed($event)"
           (itemAdded)="onItemAdded($event)"
+          (itemEdited)="onItemEdited($event)"
+          (itemRemoved)="onItemRemoved($event)"
           (deleted)="onContainerDeleted()"
         />
       } @else {

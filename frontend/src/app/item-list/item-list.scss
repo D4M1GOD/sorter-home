@@ -48,3 +48,58 @@
 .item-description {
   white-space: pre-line;
 }
+
+// The "Edit" and "Delete" icon buttons, in a line below the text of the row.
+.item-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.item-confirm {
+  margin-top: 0.5rem;
+  overflow-wrap: anywhere;
+}
+
+// A square button of 44 px (the touch target), bigger than the 20 px drawing inside it.
+.icon-button {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  padding: 0;
+  border: 1px solid #1f2937;
+  border-radius: 0.25rem;
+  background: #fff;
+  color: #1f2937;
+  cursor: pointer;
+}
+
+.icon-button:hover {
+  background: #f3f4f6;
+}
+
+// A clear ring for the keyboard focus. It is not shown after a mouse click.
+.icon-button:focus-visible {
+  outline: 3px solid #1f4fbf;
+  outline-offset: 2px;
+}
+
+// The color is an extra hint: the drawing and the name of the button already tell them apart.
+.icon-button--danger {
+  border-color: #9b1c1c;
+  color: #9b1c1c;
+}
+
+.icon {
+  display: block;
+  width: 1.25rem;
+  height: 1.25rem;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}

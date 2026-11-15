@@ -13,6 +13,7 @@ import { canonicalCategory, cleanCategory, usedCategories } from './item-categor
 import {
   isValidItemDraft,
   Item,
+  ItemDraft,
   ITEM_CATEGORY_MAX_LENGTH,
   ITEM_DESCRIPTION_MAX_LENGTH,
   ITEM_NAME_MAX_LENGTH,
@@ -514,6 +515,65 @@ export class RoomStore {
       ...r,
       containers: r.containers.map((c) =>
         c.id === containerId ? { ...c, items: [...c.items, saved] } : c,
+      ),
+    }));
+    return true;
+  }
+
+  /**
+   * Changes the name, quantity, description and category of an item. The item keeps its id and
+   * its place in the list. The name and the description are saved trimmed. The category is
+   * compared with the categories of the other items (in any room): when one of them already uses
+   * it, its spelling is reused; when no other item uses it, the cleaned text is saved, so the
+   * spelling of a category with a single item can be corrected. The other items never change.
+   * Returns false, and changes nothing, if the room, the container or the item does not exist,
+   * or a field is not valid. Returns true without writing when nothing changed.
+   */
+  updateItem(roomId: string, containerId: string, itemId: string, draft: ItemDraft): boolean {
+    const container = this.getById(roomId)?.containers.find((c) => c.id === containerId);
+    const current = container?.items.find((i) => i.id === itemId);
+    if (!current || !isValidItemDraft(draft)) {
+      return false;
+    }
+    const saved: Item = {
+      id: current.id,
+      name: draft.name.trim(),
+      quantity: draft.quantity,
+      description: draft.description.trim(),
+      category: canonicalCategory(draft.category, usedCategories(this.roomsState(), itemId)),
+    };
+    if (
+      saved.name === current.name &&
+      saved.quantity === current.quantity &&
+      saved.description === current.description &&
+      saved.category === current.category
+    ) {
+      return true;
+    }
+    this.updateRoom(roomId, (r) => ({
+      ...r,
+      containers: r.containers.map((c) =>
+        c.id === containerId
+          ? { ...c, items: c.items.map((i) => (i.id === itemId ? saved : i)) }
+          : c,
+      ),
+    }));
+    return true;
+  }
+
+  /**
+   * Removes an item from a container. The other items keep their order. Returns false, and
+   * changes nothing, if the room, the container or the item does not exist.
+   */
+  removeItem(roomId: string, containerId: string, itemId: string): boolean {
+    const container = this.getById(roomId)?.containers.find((c) => c.id === containerId);
+    if (!container?.items.some((i) => i.id === itemId)) {
+      return false;
+    }
+    this.updateRoom(roomId, (r) => ({
+      ...r,
+      containers: r.containers.map((c) =>
+        c.id === containerId ? { ...c, items: c.items.filter((i) => i.id !== itemId) } : c,
       ),
     }));
     return true;

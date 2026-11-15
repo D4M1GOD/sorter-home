@@ -15,6 +15,11 @@ function counted(count: number, singular: string): string {
   return `${count} ${singular}${count === 1 ? '' : 's'}`;
 }
 
+/** The question of the inline confirmation before deleting an item. */
+export function itemDeleteQuestion(item: { name: string }): string {
+  return `Delete "${item.name}"? This cannot be undone.`;
+}
+
 /**
  * The question of the inline confirmation before deleting a container. Deleting a container
  * deletes its items too, so the question says how many it has. The number is the count of items

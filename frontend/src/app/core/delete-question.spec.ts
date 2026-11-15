@@ -1,4 +1,8 @@
-import { containerDeleteQuestion, roomDeleteQuestion } from './delete-question';
+import {
+  containerDeleteQuestion,
+  itemDeleteQuestion,
+  roomDeleteQuestion,
+} from './delete-question';
 import { Item } from './item.model';
 
 describe('delete questions', () => {
@@ -11,6 +15,15 @@ describe('delete questions', () => {
       category: '',
     }));
   }
+
+  describe('item', () => {
+    it('asks with the name of the item, whatever its quantity', () => {
+      expect(itemDeleteQuestion({ name: 'Hammer' })).toBe(
+        'Delete "Hammer"? This cannot be undone.',
+      );
+      expect(itemDeleteQuestion(items(1, 50)[0])).toBe('Delete "Item 0"? This cannot be undone.');
+    });
+  });
 
   describe('container', () => {
     it('keeps the short question for a container without items', () => {

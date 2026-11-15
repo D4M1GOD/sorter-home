@@ -3,7 +3,7 @@ import { toSignal } from '@angular/core/rxjs-interop';
 import { apply, form, FormField, submit } from '@angular/forms/signals';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { map } from 'rxjs';
-import { ContainerPanel } from '../../container-panel/container-panel';
+import { ContainerPanel, ItemEdited } from '../../container-panel/container-panel';
 import { stackOf } from '../../core/container-stack';
 import { createContainer, nextContainerName } from '../../core/container.model';
 import { createItem, isValidItemDraft, ItemDraft } from '../../core/item.model';
@@ -202,6 +202,24 @@ export class RoomDetail {
     const container = this.selectedContainer();
     if (room && container && isValidItemDraft(draft)) {
       this.store.addItem(room.id, container.id, createItem(draft));
+    }
+  }
+
+  /** Saves the new values of an item of the selected container. The store checks them again. */
+  protected onItemEdited(edited: ItemEdited): void {
+    const room = this.room();
+    const container = this.selectedContainer();
+    if (room && container) {
+      this.store.updateItem(room.id, container.id, edited.itemId, edited.draft);
+    }
+  }
+
+  /** Removes an item from the selected container. */
+  protected onItemRemoved(itemId: string): void {
+    const room = this.room();
+    const container = this.selectedContainer();
+    if (room && container) {
+      this.store.removeItem(room.id, container.id, itemId);
     }
   }
 

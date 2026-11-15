@@ -5,7 +5,7 @@
 
 /** A list of rooms, reduced to what is needed to read the categories of their items. */
 type RoomsWithItems = readonly {
-  containers: readonly { items: readonly { category: string }[] }[];
+  containers: readonly { items: readonly { id?: string; category: string }[] }[];
 }[];
 
 /** A category as it is saved: without surrounding spaces, and with runs of spaces made one space. */
@@ -26,13 +26,17 @@ export function categoryKey(text: string): string {
 /**
  * The categories used by the items of all the rooms, without repeats and in alphabetical order.
  * When the same category is written in several ways, the first spelling found is kept.
- * Items without a category are skipped.
+ * Items without a category are skipped. The item with the id `ignoredItemId` is skipped too: when
+ * an item is edited, its new category is compared with the categories of the other items.
  */
-export function usedCategories(rooms: RoomsWithItems): string[] {
+export function usedCategories(rooms: RoomsWithItems, ignoredItemId?: string): string[] {
   const byKey = new Map<string, string>();
   for (const room of rooms) {
     for (const container of room.containers) {
       for (const item of container.items) {
+        if (ignoredItemId !== undefined && item.id === ignoredItemId) {
+          continue;
+        }
         const key = categoryKey(item.category);
         if (key !== '' && !byKey.has(key)) {
           byKey.set(key, cleanCategory(item.category));

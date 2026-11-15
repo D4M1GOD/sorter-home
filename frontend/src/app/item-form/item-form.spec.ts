@@ -1,5 +1,6 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { vi } from 'vitest';
+import { Item } from '../core/item.model';
 import { ItemForm } from './item-form';
 
 describe('ItemForm', () => {
@@ -294,6 +295,139 @@ describe('ItemForm', () => {
       );
       expect(closed).toHaveBeenCalledTimes(1);
       expect(added).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('editing an item', () => {
+    const nails: Item = {
+      id: 'item-1',
+      name: 'Nails',
+      quantity: 100,
+      description: 'Box of 100\n2 in',
+      category: 'Hardware',
+    };
+
+    async function setupEdit(item: Item = nails, categories: string[] = []) {
+      const fixture = TestBed.createComponent(ItemForm);
+      fixture.componentRef.setInput('categories', categories);
+      fixture.componentRef.setInput('item', item);
+      document.body.appendChild(fixture.nativeElement);
+      fixture.detectChanges();
+      await fixture.whenStable();
+      const added = vi.fn();
+      const saved = vi.fn();
+      const closed = vi.fn();
+      fixture.componentInstance.added.subscribe(added);
+      fixture.componentInstance.saved.subscribe(saved);
+      fixture.componentInstance.closed.subscribe(closed);
+      const element = fixture.nativeElement as HTMLElement;
+      return { fixture, element, added, saved, closed };
+    }
+
+    it('has the title "Edit item" and offers "Save" and "Cancel"', async () => {
+      const { element } = await setupEdit();
+      expect(element.querySelector('h4')?.textContent?.trim()).toBe('Edit item');
+      expect(element.querySelector('form')?.getAttribute('aria-labelledby')).toBe(
+        element.querySelector('h4')?.id,
+      );
+      const labels = Array.from(element.querySelectorAll('button')).map((b) =>
+        b.textContent?.trim(),
+      );
+      expect(labels).toEqual(['Save', 'Cancel']);
+      expect(button(element, 'Save')?.type).toBe('submit');
+      expect(button(element, 'Cancel')?.type).toBe('button');
+    });
+
+    it('keeps the title "Add item" when there is no item to edit', async () => {
+      const { element } = await setup();
+      expect(element.querySelector('h4')?.textContent?.trim()).toBe('Add item');
+    });
+
+    it('starts with the data of the item, and the focus on the name', async () => {
+      const { element } = await setupEdit();
+      expect(field(element, 'item-name').value).toBe('Nails');
+      expect(field(element, 'item-quantity').value).toBe('100');
+      expect(field(element, 'item-description').value).toBe('Box of 100\n2 in');
+      expect(field(element, 'item-category').value).toBe('Hardware');
+      expect(document.activeElement).toBe(field(element, 'item-name'));
+      expect(element.querySelector('.counter')?.textContent?.trim()).toBe('15/500');
+      expect(errors(element)).toEqual([]);
+    });
+
+    it('shows the quantity 0 of an item with none left', async () => {
+      const { element } = await setupEdit({ ...nails, quantity: 0 });
+      expect(field(element, 'item-quantity').value).toBe('0');
+    });
+
+    it('emits "saved" with the new values, the quantity as a number, and does not emit "added"', async () => {
+      const { fixture, element, added, saved } = await setupEdit();
+      type(element, 'item-name', '  Screws ');
+      type(element, 'item-quantity', '85');
+      type(element, 'item-description', '');
+      type(element, 'item-category', 'Tools');
+      await submitForm(fixture, element);
+      expect(saved).toHaveBeenCalledTimes(1);
+      expect(saved).toHaveBeenCalledWith({
+        name: 'Screws',
+        quantity: 85,
+        description: '',
+        category: 'Tools',
+      });
+      expect(added).not.toHaveBeenCalled();
+    });
+
+    it('emits "saved" with the same values when nothing was changed', async () => {
+      const { fixture, element, saved } = await setupEdit();
+      await submitForm(fixture, element);
+      expect(saved).toHaveBeenCalledWith({
+        name: 'Nails',
+        quantity: 100,
+        description: 'Box of 100\n2 in',
+        category: 'Hardware',
+      });
+    });
+
+    it('does not clean the form or show "Added" after saving: whoever shows the form closes it', async () => {
+      const { fixture, element } = await setupEdit();
+      type(element, 'item-name', 'Screws');
+      await submitForm(fixture, element);
+      expect(field(element, 'item-name').value).toBe('Screws');
+      expect(element.querySelector('.status')?.textContent?.trim()).toBe('');
+    });
+
+    it('has the same rules and errors as adding, and saves nothing while there is an error', async () => {
+      const { fixture, element, saved } = await setupEdit();
+      type(element, 'item-name', '   ');
+      type(element, 'item-quantity', '1.5');
+      await submitForm(fixture, element);
+      expect(saved).not.toHaveBeenCalled();
+      expect(errors(element)).toEqual([
+        'Item name is required.',
+        'Quantity must be a whole number from 0 to 9999.',
+      ]);
+      expect(field(element, 'item-name').getAttribute('maxlength')).toBe('60');
+      expect(field(element, 'item-description').getAttribute('maxlength')).toBe('500');
+      expect(field(element, 'item-category').getAttribute('maxlength')).toBe('40');
+    });
+
+    it('offers the categories in use as suggestions', async () => {
+      const { element } = await setupEdit(nails, ['Hardware', 'Navidad']);
+      const options = Array.from(element.querySelectorAll('datalist option')).map((o) =>
+        o.getAttribute('value'),
+      );
+      expect(options).toEqual(['Hardware', 'Navidad']);
+    });
+
+    it('emits "closed" with Cancel and with the Escape key, without saving', async () => {
+      const { element, saved, closed } = await setupEdit();
+      type(element, 'item-name', 'Screws');
+      button(element, 'Cancel')?.click();
+      expect(closed).toHaveBeenCalledTimes(1);
+      field(element, 'item-quantity').dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+      );
+      expect(closed).toHaveBeenCalledTimes(2);
+      expect(saved).not.toHaveBeenCalled();
     });
   });
 });
