@@ -5,10 +5,17 @@ import {
   isValidItemDraft,
   isValidItemName,
   isValidItemQuantity,
+  isValidQuantityOut,
   Item,
   ItemDraft,
+  markUsedFromInside,
+  markUsedFromOut,
   parseItemQuantity,
+  parseUnits,
+  putBack,
   sortItemsByName,
+  takeOut,
+  unitsInside,
 } from './item.model';
 
 describe('item model', () => {
@@ -96,10 +103,16 @@ describe('item model', () => {
         id: item.id,
         name: 'Nails',
         quantity: 100,
+        quantityOut: 0,
         description: 'Box of 100',
         category: 'Hardware',
       });
       expect(item.id).toBeTruthy();
+    });
+
+    it('creates the item with no units out, whatever the draft carries', () => {
+      const withOut = { ...draft, quantityOut: 5 } as ItemDraft;
+      expect(createItem(withOut).quantityOut).toBe(0);
     });
 
     it('gives each item its own id', () => {
@@ -138,9 +151,142 @@ describe('item model', () => {
     });
   });
 
+  describe('units out of the container', () => {
+    /** "Nails" with a total of `quantity` units, `quantityOut` of them out. */
+    function nails(quantity: number, quantityOut: number): Item {
+      return { ...draft, id: 'item-1', quantity, quantityOut };
+    }
+
+    const notWholeUnits = [0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY, '3' as unknown as number];
+
+    it('are valid when they are a whole number from 0 to the quantity', () => {
+      expect(isValidQuantityOut(0, 100)).toBe(true);
+      expect(isValidQuantityOut(100, 100)).toBe(true);
+      expect(isValidQuantityOut(0, 0)).toBe(true);
+      expect(isValidQuantityOut(101, 100)).toBe(false);
+      expect(isValidQuantityOut(-1, 100)).toBe(false);
+      expect(isValidQuantityOut(1.5, 100)).toBe(false);
+      expect(isValidQuantityOut('3', 100)).toBe(false);
+      expect(isValidQuantityOut(undefined, 100)).toBe(false);
+    });
+
+    it('unitsInside is the quantity minus the units out', () => {
+      expect(unitsInside(nails(100, 0))).toBe(100);
+      expect(unitsInside(nails(100, 20))).toBe(80);
+      expect(unitsInside(nails(4, 4))).toBe(0);
+      expect(unitsInside(nails(0, 0))).toBe(0);
+    });
+
+    it('parseUnits reads a whole number from 1 to the maximum, and rounds nothing', () => {
+      expect(parseUnits('1', 80)).toBe(1);
+      expect(parseUnits(' 80 ', 80)).toBe(80);
+      expect(parseUnits('020', 80)).toBe(20);
+      for (const text of ['', '   ', '0', '81', '1.5', '-1', '+1', '1e1', 'abc', '2 0']) {
+        expect(parseUnits(text, 80)).toBeNull();
+      }
+      expect(parseUnits('1', 0)).toBeNull();
+    });
+
+    describe('takeOut', () => {
+      it('counts the units as out and keeps the quantity', () => {
+        expect(takeOut(nails(100, 0), 20)).toEqual(nails(100, 20));
+        expect(takeOut(nails(100, 20), 1)).toEqual(nails(100, 21));
+      });
+
+      it('can take out all the units inside, and no more', () => {
+        expect(takeOut(nails(100, 20), 80)).toEqual(nails(100, 100));
+        expect(takeOut(nails(100, 20), 81)).toBeNull();
+        expect(takeOut(nails(4, 4), 1)).toBeNull();
+        expect(takeOut(nails(0, 0), 1)).toBeNull();
+      });
+
+      it('gives null for units that are not a whole number from 1 up', () => {
+        for (const units of notWholeUnits) {
+          expect(takeOut(nails(100, 20), units)).toBeNull();
+        }
+      });
+
+      it('does not change the item it receives, and keeps its other fields', () => {
+        const item = { ...nails(100, 0), description: 'Box', category: 'Hardware' };
+        const after = takeOut(item, 20);
+        expect(item.quantityOut).toBe(0);
+        expect(after).toEqual({ ...item, quantityOut: 20 });
+      });
+    });
+
+    describe('putBack', () => {
+      it('lowers the units out and keeps the quantity', () => {
+        expect(putBack(nails(100, 20), 5)).toEqual(nails(100, 15));
+        expect(putBack(nails(4, 4), 4)).toEqual(nails(4, 0));
+      });
+
+      it('cannot put back more than the units that are out', () => {
+        expect(putBack(nails(100, 20), 21)).toBeNull();
+        expect(putBack(nails(100, 0), 1)).toBeNull();
+      });
+
+      it('gives null for units that are not a whole number from 1 up', () => {
+        for (const units of notWholeUnits) {
+          expect(putBack(nails(100, 20), units)).toBeNull();
+        }
+      });
+    });
+
+    describe('markUsedFromOut', () => {
+      it('lowers the quantity and the units out by the same number', () => {
+        expect(markUsedFromOut(nails(100, 20), 15)).toEqual(nails(85, 5));
+      });
+
+      it('can use all the units out, also the last units of the item', () => {
+        expect(markUsedFromOut(nails(100, 20), 20)).toEqual(nails(80, 0));
+        expect(markUsedFromOut(nails(4, 4), 4)).toEqual(nails(0, 0));
+      });
+
+      it('cannot use more than the units that are out', () => {
+        expect(markUsedFromOut(nails(100, 20), 21)).toBeNull();
+        expect(markUsedFromOut(nails(100, 0), 1)).toBeNull();
+      });
+
+      it('gives null for units that are not a whole number from 1 up', () => {
+        for (const units of notWholeUnits) {
+          expect(markUsedFromOut(nails(100, 20), units)).toBeNull();
+        }
+      });
+    });
+
+    describe('markUsedFromInside', () => {
+      it('lowers the quantity and does not change the units out', () => {
+        expect(markUsedFromInside(nails(100, 0), 15)).toEqual(nails(85, 0));
+        expect(markUsedFromInside(nails(100, 20), 15)).toEqual(nails(85, 20));
+      });
+
+      it('can use all the units inside, and no more', () => {
+        expect(markUsedFromInside(nails(100, 20), 80)).toEqual(nails(20, 20));
+        expect(markUsedFromInside(nails(100, 0), 100)).toEqual(nails(0, 0));
+        expect(markUsedFromInside(nails(100, 20), 81)).toBeNull();
+        expect(markUsedFromInside(nails(4, 4), 1)).toBeNull();
+      });
+
+      it('gives null for units that are not a whole number from 1 up', () => {
+        for (const units of notWholeUnits) {
+          expect(markUsedFromInside(nails(100, 20), units)).toBeNull();
+        }
+      });
+    });
+
+    it('follows the example of the requirements, with and without taking out first', () => {
+      // Take out 20, use 15, put back 5.
+      const out = takeOut(nails(100, 0), 20) as Item;
+      const used = markUsedFromOut(out, 15) as Item;
+      expect(putBack(used, 5)).toEqual(nails(85, 0));
+      // The shortcut: use 15 without taking them out.
+      expect(markUsedFromInside(nails(100, 0), 15)).toEqual(nails(85, 0));
+    });
+  });
+
   describe('sortItemsByName', () => {
     const named = (...names: string[]): Item[] =>
-      names.map((name, index) => ({ ...draft, id: `id-${index}`, name }));
+      names.map((name, index) => ({ ...draft, id: `id-${index}`, name, quantityOut: 0 }));
 
     it('orders by name, ignoring upper/lower case', () => {
       const sorted = sortItemsByName(named('nails', 'Batteries', 'cables', 'Zip ties'));

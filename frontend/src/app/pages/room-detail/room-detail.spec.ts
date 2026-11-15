@@ -780,7 +780,14 @@ describe('RoomDetail', () => {
 
       const saved = itemsOf(store, room.id, toys.id);
       expect(saved).toEqual([
-        { id: saved[0].id, name: 'Nails', quantity: 100, description: 'Box of 100', category: 'Hardware' },
+        {
+          id: saved[0].id,
+          name: 'Nails',
+          quantity: 100,
+          quantityOut: 0,
+          description: 'Box of 100',
+          category: 'Hardware',
+        },
       ]);
       expect(itemsOf(store, room.id, books.id)).toEqual([]);
       expect(element.querySelector('.items h3')?.textContent?.trim()).toBe('Items (1)');
@@ -934,6 +941,7 @@ describe('RoomDetail', () => {
           id: before[1].id,
           name: 'Zip ties',
           quantity: 0,
+          quantityOut: 0,
           description: 'Black\n8 in',
           category: 'Hardware', // the spelling of the other item is reused
         };
@@ -1036,6 +1044,170 @@ describe('RoomDetail', () => {
         expect(element.querySelector('app-item-form')).toBeNull();
         expect(names(element)).toEqual(['Batteries', 'Cables', 'Nails']);
         expect(itemsOf(store, room.id, toys.id)).toEqual(before);
+      });
+
+      describe('take out, put back and used', () => {
+        /** Opens a form from its button, types the units and presses a button of the form. */
+        async function run(
+          fixture: ComponentFixture<unknown>,
+          element: HTMLElement,
+          open: string,
+          units: string,
+          press: string,
+        ) {
+          iconButton(element, open).click();
+          await fixture.whenStable();
+          typeIn(element, 'item-units', units);
+          const pressed = Array.from(element.querySelectorAll('app-item-units-form button')).find(
+            (b) => b.textContent?.trim() === press,
+          ) as HTMLButtonElement;
+          pressed.click();
+          await fixture.whenStable();
+        }
+
+        /** What the row of "Nails" shows: its quantity and its "out" line. */
+        function nailsRow(element: HTMLElement) {
+          const row = iconButton(element, 'Edit Nails').closest('.item') as HTMLElement;
+          return [
+            row.querySelector('.item-quantity')?.textContent?.trim(),
+            row.querySelector('.item-out')?.textContent?.trim(),
+          ];
+        }
+
+        it('follows the example: take out 20, used 15, put back 5', async () => {
+          const { store, room, toys, fixture, element } = await openWithItems();
+          const amounts = () => {
+            const nails = itemsOf(store, room.id, toys.id)[0];
+            return [nails.quantity, nails.quantityOut];
+          };
+          expect(nailsRow(element)).toEqual(['Qty 100', undefined]);
+
+          await run(fixture, element, 'Take out Nails', '20', 'Take out');
+          expect(amounts()).toEqual([100, 20]);
+          expect(nailsRow(element)).toEqual(['Qty 100', '20 of 100 out']);
+          expect(element.querySelector('.item-notice')?.textContent?.trim()).toBe(
+            'Took out 20 of Nails',
+          );
+
+          await run(fixture, element, 'Used Nails', '15', 'Used');
+          expect(amounts()).toEqual([85, 5]);
+          expect(nailsRow(element)).toEqual(['Qty 85', '5 of 85 out']);
+          expect(element.querySelector('.item-notice')?.textContent?.trim()).toBe(
+            'Marked 15 of Nails as used',
+          );
+
+          await run(fixture, element, 'Put back Nails', '5', 'Put back');
+          expect(amounts()).toEqual([85, 0]);
+          expect(nailsRow(element)).toEqual(['Qty 85', undefined]);
+          expect(element.querySelector('.item-notice')?.textContent?.trim()).toBe(
+            'Put back 5 of Nails',
+          );
+          expect(iconButton(element, 'Put back Nails')).toBeNull();
+          // Saved in the browser storage too.
+          expect(itemsOf(new RoomStore(), room.id, toys.id)).toEqual(itemsOf(store, room.id, toys.id));
+        });
+
+        it('follows the example with the shortcut: mark 15 as used without taking them out', async () => {
+          const { store, room, toys, fixture, element } = await openWithItems();
+          await run(fixture, element, 'Take out Nails', '15', 'Mark as used');
+          const nails = itemsOf(store, room.id, toys.id)[0];
+          expect([nails.quantity, nails.quantityOut]).toEqual([85, 0]);
+          expect(nailsRow(element)).toEqual(['Qty 85', undefined]);
+          expect(element.querySelector('.item-notice')?.textContent?.trim()).toBe(
+            'Marked 15 of Nails as used',
+          );
+          expect(itemsOf(new RoomStore(), room.id, toys.id)[0].quantity).toBe(85);
+        });
+
+        it('the Enter key in the "take out" form takes out and does not use', async () => {
+          const { store, room, toys, fixture, element } = await openWithItems();
+          iconButton(element, 'Take out Nails').click();
+          await fixture.whenStable();
+          typeIn(element, 'item-units', '10');
+          element.querySelector('app-item-units-form form')?.dispatchEvent(new Event('submit'));
+          await fixture.whenStable();
+          const nails = itemsOf(store, room.id, toys.id)[0];
+          expect([nails.quantity, nails.quantityOut]).toEqual([100, 10]);
+        });
+
+        it('shows "4 of 4 out" when all the units are out, and "None left" when all were used', async () => {
+          const { store, room, toys, fixture, element } = await openWithItems();
+          await run(fixture, element, 'Take out Nails', '100', 'Take out');
+          expect(nailsRow(element)).toEqual(['Qty 100', '100 of 100 out']);
+          expect(iconButton(element, 'Take out Nails')).toBeNull();
+
+          await run(fixture, element, 'Used Nails', '100', 'Used');
+          expect(nailsRow(element)).toEqual(['None left', undefined]);
+          // The item stays in its container.
+          expect(itemsOf(store, room.id, toys.id).map((i) => i.name)).toContain('Nails');
+          expect(element.querySelector('.items h3')?.textContent?.trim()).toBe('Items (3)');
+        });
+
+        it('saves nothing when the quantity is wrong or the form is cancelled', async () => {
+          const { store, room, toys, fixture, element } = await openWithItems();
+          const before = itemsOf(store, room.id, toys.id);
+          await run(fixture, element, 'Take out Nails', '101', 'Take out');
+          expect(element.querySelector('app-item-units-form .field-error')?.textContent?.trim()).toBe(
+            'Quantity must be a whole number from 1 to 100.',
+          );
+          // The form stays open with its error: try the other button with another wrong value.
+          typeIn(element, 'item-units', '1.5');
+          panelButton(element, 'Mark as used')?.click();
+          await fixture.whenStable();
+          expect(element.querySelector('app-item-units-form')).not.toBeNull();
+          panelButton(element, 'Cancel')?.click();
+          await fixture.whenStable();
+          expect(element.querySelector('app-item-units-form')).toBeNull();
+          expect(itemsOf(store, room.id, toys.id)).toEqual(before);
+        });
+
+        it('blocks editing the quantity below the units out, and says how many are out', async () => {
+          const { store, room, toys, fixture, element } = await openWithItems();
+          await run(fixture, element, 'Take out Nails', '20', 'Take out');
+
+          iconButton(element, 'Edit Nails').click();
+          await fixture.whenStable();
+          expect(element.querySelector('#item-quantity-out')?.textContent?.trim()).toBe(
+            '20 are out of the container.',
+          );
+          typeIn(element, 'item-quantity', '19');
+          await saveEdit(fixture, element);
+          expect(element.querySelector('.item app-item-form .field-error')?.textContent?.trim()).toBe(
+            "Quantity can't be lower than the units that are out (20).",
+          );
+          let nails = itemsOf(store, room.id, toys.id)[0];
+          expect([nails.quantity, nails.quantityOut]).toEqual([100, 20]);
+
+          typeIn(element, 'item-quantity', '50');
+          await saveEdit(fixture, element);
+          nails = itemsOf(store, room.id, toys.id)[0];
+          expect([nails.quantity, nails.quantityOut]).toEqual([50, 20]);
+          expect(nailsRow(element)).toEqual(['Qty 50', '20 of 50 out']);
+        });
+
+        it('says in the delete confirmation that units are out, and removes the item', async () => {
+          const { store, room, toys, fixture, element } = await openWithItems();
+          await run(fixture, element, 'Take out Nails', '20', 'Take out');
+          iconButton(element, 'Delete Nails').click();
+          await fixture.whenStable();
+          expect(element.querySelector('.item .confirm span')?.textContent?.trim()).toBe(
+            'Delete "Nails"? 20 of 100 are out of the container. This cannot be undone.',
+          );
+          (element.querySelector('.item-confirm-delete') as HTMLButtonElement).click();
+          await fixture.whenStable();
+          expect(itemsOf(store, room.id, toys.id).map((i) => i.name)).toEqual(['Cables', 'Batteries']);
+        });
+
+        it('does not rotate the container when the user types "r" in the quantity', async () => {
+          const { store, room, toys, fixture, element } = await openWithItems();
+          iconButton(element, 'Take out Nails').click();
+          await fixture.whenStable();
+          element
+            .querySelector('#item-units')
+            ?.dispatchEvent(new KeyboardEvent('keydown', { key: 'r', bubbles: true }));
+          await fixture.whenStable();
+          expect(store.getById(room.id)?.containers.find((c) => c.id === toys.id)?.rotation).toBe(0);
+        });
       });
 
       it('does not rotate the container when the user types "r" in the edit form', async () => {

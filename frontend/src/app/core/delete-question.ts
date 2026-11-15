@@ -15,9 +15,20 @@ function counted(count: number, singular: string): string {
   return `${count} ${singular}${count === 1 ? '' : 's'}`;
 }
 
-/** The question of the inline confirmation before deleting an item. */
-export function itemDeleteQuestion(item: { name: string }): string {
-  return `Delete "${item.name}"? This cannot be undone.`;
+/**
+ * The question of the inline confirmation before deleting an item. When some of its units are
+ * out of the container the question says so, because those objects lose their recorded place.
+ */
+export function itemDeleteQuestion(item: {
+  name: string;
+  quantity?: number;
+  quantityOut?: number;
+}): string {
+  const out = item.quantityOut ?? 0;
+  if (out === 0) {
+    return `Delete "${item.name}"? This cannot be undone.`;
+  }
+  return `Delete "${item.name}"? ${out} of ${item.quantity} are out of the container. This cannot be undone.`;
 }
 
 /**

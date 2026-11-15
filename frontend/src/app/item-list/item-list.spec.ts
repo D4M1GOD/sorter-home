@@ -5,7 +5,15 @@ import { ItemList } from './item-list';
 
 describe('ItemList', () => {
   function item(name: string, values: Partial<Item> = {}): Item {
-    return { id: `id-${name}`, name, quantity: 1, description: '', category: '', ...values };
+    return {
+      id: `id-${name}`,
+      name,
+      quantity: 1,
+      quantityOut: 0,
+      description: '',
+      category: '',
+      ...values,
+    };
   }
 
   async function setup(items: Item[]) {
@@ -108,10 +116,14 @@ describe('ItemList', () => {
       return Array.from(row.querySelectorAll('button')).map((b) => b.getAttribute('aria-label'));
     }
 
-    it('has an "Edit" and a "Delete" button in each row, named with the item name', async () => {
+    it('has a "Take out", an "Edit" and a "Delete" button in each row, named with the item name', async () => {
       const { element } = await setup([item('Nails'), item('Hammer')]);
-      expect(buttonLabels(rows(element)[0])).toEqual(['Edit Hammer', 'Delete Hammer']);
-      expect(buttonLabels(rows(element)[1])).toEqual(['Edit Nails', 'Delete Nails']);
+      expect(buttonLabels(rows(element)[0])).toEqual([
+        'Take out Hammer',
+        'Edit Hammer',
+        'Delete Hammer',
+      ]);
+      expect(buttonLabels(rows(element)[1])).toEqual(['Take out Nails', 'Edit Nails', 'Delete Nails']);
     });
 
     it('gives each button a tooltip with the same text, and type "button"', async () => {
@@ -125,17 +137,17 @@ describe('ItemList', () => {
     it('draws each icon as an SVG that screen readers skip, with a different drawing for each', async () => {
       const { element } = await setup([item('Hammer')]);
       const icons = Array.from(rows(element)[0].querySelectorAll('button svg'));
-      expect(icons.length).toBe(2);
+      expect(icons.length).toBe(3);
       for (const icon of icons) {
         expect(icon.getAttribute('aria-hidden')).toBe('true');
         expect(icon.getAttribute('focusable')).toBe('false');
       }
       // The meaning does not rely on color: the two drawings are different.
-      expect(icons[0].innerHTML).not.toBe(icons[1].innerHTML);
+      expect(new Set(icons.map((icon) => icon.innerHTML)).size).toBe(3);
       expect(element.querySelector('img')).toBeNull();
     });
 
-    it('puts the buttons below the text of the row, "Edit" first', async () => {
+    it('puts the buttons below the text of the row, in the order "Take out", "Edit", "Delete"', async () => {
       const { element } = await setup([item('Hammer', { category: 'Tools', description: 'Steel' })]);
       const row = rows(element)[0];
       const description = row.querySelector('.item-description') as Element;
@@ -143,7 +155,11 @@ describe('ItemList', () => {
       expect(
         description.compareDocumentPosition(actions) & Node.DOCUMENT_POSITION_FOLLOWING,
       ).toBeTruthy();
-      expect(actions.querySelectorAll('button').length).toBe(2);
+      expect(buttonLabels(actions as HTMLElement)).toEqual([
+        'Take out Hammer',
+        'Edit Hammer',
+        'Delete Hammer',
+      ]);
     });
 
     it('emits the id of the item when "Edit" or "Delete" is pressed, and changes nothing by itself', async () => {
@@ -165,7 +181,11 @@ describe('ItemList', () => {
         { ...item('Cable'), id: 'b' },
       ]);
       const spies = outputs(fixture);
-      expect(buttonLabels(rows(element)[1])).toEqual(['Edit Cable', 'Delete Cable']);
+      expect(buttonLabels(rows(element)[1])).toEqual([
+        'Take out Cable',
+        'Edit Cable',
+        'Delete Cable',
+      ]);
       (rows(element)[1].querySelector('.item-edit') as HTMLButtonElement).click();
       expect(spies.editRequested).toHaveBeenCalledWith('b');
     });
@@ -310,7 +330,204 @@ describe('ItemList', () => {
     });
   });
 
+  describe('units out of the container', () => {
+    function buttonNames(row: HTMLElement): (string | null)[] {
+      return Array.from(row.querySelectorAll('button')).map((b) => b.getAttribute('aria-label'));
+    }
+
+    function text(row: HTMLElement, selector: string): string | undefined {
+      return row.querySelector(selector)?.textContent?.trim();
+    }
+
+    it('all inside: shows "Qty 100", no "out" line, and "Take out", "Edit" and "Delete"', async () => {
+      const { element } = await setup([item('Nails', { quantity: 100 })]);
+      const row = rows(element)[0];
+      expect(text(row, '.item-quantity')).toBe('Qty 100');
+      expect(row.querySelector('.item-out')).toBeNull();
+      expect(buttonNames(row)).toEqual(['Take out Nails', 'Edit Nails', 'Delete Nails']);
+    });
+
+    it('some out: shows "Qty 100" and "20 of 100 out", with all the buttons', async () => {
+      const { element } = await setup([item('Nails', { quantity: 100, quantityOut: 20 })]);
+      const row = rows(element)[0];
+      expect(text(row, '.item-quantity')).toBe('Qty 100');
+      expect(text(row, '.item-out')).toBe('20 of 100 out');
+      expect(buttonNames(row)).toEqual([
+        'Put back Nails',
+        'Used Nails',
+        'Take out Nails',
+        'Edit Nails',
+        'Delete Nails',
+      ]);
+    });
+
+    it('all out: shows "Qty 4" and "4 of 4 out" (not "None left"), without "Take out"', async () => {
+      const { element } = await setup([item('Lights', { quantity: 4, quantityOut: 4 })]);
+      const row = rows(element)[0];
+      expect(text(row, '.item-quantity')).toBe('Qty 4');
+      expect(text(row, '.item-out')).toBe('4 of 4 out');
+      expect(row.textContent).not.toContain('None left');
+      expect(buttonNames(row)).toEqual([
+        'Put back Lights',
+        'Used Lights',
+        'Edit Lights',
+        'Delete Lights',
+      ]);
+    });
+
+    it('quantity 0: shows "None left", with only "Edit" and "Delete"', async () => {
+      const { element } = await setup([item('Nails', { quantity: 0 })]);
+      const row = rows(element)[0];
+      expect(text(row, '.item-quantity')).toBe('None left');
+      expect(row.querySelector('.item-out')).toBeNull();
+      expect(buttonNames(row)).toEqual(['Edit Nails', 'Delete Nails']);
+    });
+
+    it('"Put back" and "Used" are text buttons, below the "out" line and above the icons', async () => {
+      const { element } = await setup([item('Nails', { quantity: 100, quantityOut: 20 })]);
+      const row = rows(element)[0];
+      const putBack = row.querySelector('.item-put-back') as HTMLButtonElement;
+      const used = row.querySelector('.item-used') as HTMLButtonElement;
+      expect(putBack.textContent?.trim()).toBe('Put back');
+      expect(used.textContent?.trim()).toBe('Used');
+      expect(putBack.type).toBe('button');
+      expect(used.type).toBe('button');
+      // The visible text is part of the accessible name, so voice control finds the button.
+      expect(putBack.getAttribute('aria-label')).toContain('Put back');
+      const parts = [
+        row.querySelector('.item-out'),
+        putBack,
+        used,
+        row.querySelector('.item-take-out'),
+      ] as Element[];
+      for (let i = 0; i < parts.length - 1; i++) {
+        expect(
+          parts[i].compareDocumentPosition(parts[i + 1]) & Node.DOCUMENT_POSITION_FOLLOWING,
+        ).toBeTruthy();
+      }
+    });
+
+    it('"Take out" is an icon button like the others: SVG hidden from screen readers, tooltip, first', async () => {
+      const { element } = await setup([item('Nails', { quantity: 100 })]);
+      const row = rows(element)[0];
+      const takeOut = row.querySelector('.item-take-out') as HTMLButtonElement;
+      expect(takeOut.classList.contains('icon-button')).toBe(true);
+      expect(takeOut.type).toBe('button');
+      expect(takeOut.getAttribute('title')).toBe('Take out Nails');
+      const icon = takeOut.querySelector('svg') as SVGElement;
+      expect(icon.getAttribute('aria-hidden')).toBe('true');
+      expect(icon.getAttribute('focusable')).toBe('false');
+      const drawings = Array.from(row.querySelectorAll('.item-actions svg')).map((s) => s.innerHTML);
+      expect(new Set(drawings).size).toBe(3); // three different drawings
+      expect(row.querySelector('.item-actions button')).toBe(takeOut);
+    });
+
+    it('emits what was asked for, with the id of the item, and changes nothing by itself', async () => {
+      const { fixture, element } = await setup([item('Nails', { quantity: 100, quantityOut: 20 })]);
+      const requested = vi.fn();
+      fixture.componentInstance.unitsRequested.subscribe(requested);
+      const row = rows(element)[0];
+      (row.querySelector('.item-take-out') as HTMLButtonElement).click();
+      (row.querySelector('.item-put-back') as HTMLButtonElement).click();
+      (row.querySelector('.item-used') as HTMLButtonElement).click();
+      expect(requested.mock.calls.map((call) => call[0])).toEqual([
+        { itemId: 'id-Nails', mode: 'take-out' },
+        { itemId: 'id-Nails', mode: 'put-back' },
+        { itemId: 'id-Nails', mode: 'used' },
+      ]);
+      fixture.detectChanges();
+      expect(element.querySelector('app-item-units-form')).toBeNull();
+    });
+
+    describe('the small form', () => {
+      async function setupForm(mode: 'take-out' | 'put-back' | 'used') {
+        const result = await setup([
+          item('Nails', { quantity: 100, quantityOut: 20 }),
+          item('Hammer', { quantity: 3, quantityOut: 1 }),
+        ]);
+        result.fixture.componentRef.setInput('unitsAction', { itemId: 'id-Nails', mode });
+        result.fixture.detectChanges();
+        await result.fixture.whenStable();
+        const submitted = vi.fn();
+        const cancelled = vi.fn();
+        result.fixture.componentInstance.unitsSubmitted.subscribe(submitted);
+        result.fixture.componentInstance.unitsCancelled.subscribe(cancelled);
+        return { ...result, submitted, cancelled };
+      }
+
+      it('takes the place of the buttons of that row only, and the row keeps its text', async () => {
+        const { element } = await setupForm('take-out');
+        const [hammer, nails] = rows(element);
+        expect(nails.querySelector('app-item-units-form')).not.toBeNull();
+        expect(nails.querySelector('.item-actions')).toBeNull();
+        expect(nails.querySelector('.item-out-actions')).toBeNull();
+        expect(text(nails, '.item-name')).toBe('Nails');
+        expect(text(nails, '.item-out')).toBe('20 of 100 out');
+        expect(hammer.querySelector('app-item-units-form')).toBeNull();
+        expect(hammer.querySelector('.item-actions')).not.toBeNull();
+        expect(element.querySelectorAll('app-item-units-form').length).toBe(1);
+      });
+
+      it('opens for the item and the action asked for', async () => {
+        const takeOut = await setupForm('take-out');
+        expect(text(takeOut.element, 'app-item-units-form h4')).toBe('Take out or use Nails');
+        expect((takeOut.element.querySelector('#item-units') as HTMLInputElement).value).toBe('80');
+        const putBack = await setupForm('put-back');
+        expect(text(putBack.element, 'app-item-units-form h4')).toBe('Put back Nails');
+        expect((putBack.element.querySelector('#item-units') as HTMLInputElement).value).toBe('20');
+        const used = await setupForm('used');
+        expect(text(used.element, 'app-item-units-form h4')).toBe('Mark Nails as used');
+      });
+
+      it('emits "unitsSubmitted" with the action and the units', async () => {
+        const { fixture, element, submitted } = await setupForm('put-back');
+        const field = element.querySelector('#item-units') as HTMLInputElement;
+        field.value = '5';
+        field.dispatchEvent(new Event('input'));
+        element.querySelector('app-item-units-form form')?.dispatchEvent(new Event('submit'));
+        await fixture.whenStable();
+        expect(submitted).toHaveBeenCalledWith({ action: 'put-back', units: 5 });
+      });
+
+      it('emits "unitsCancelled" with Cancel', async () => {
+        const { element, submitted, cancelled } = await setupForm('used');
+        const cancel = Array.from(element.querySelectorAll('button')).find(
+          (b) => b.textContent?.trim() === 'Cancel',
+        );
+        cancel?.click();
+        expect(cancelled).toHaveBeenCalledTimes(1);
+        expect(submitted).not.toHaveBeenCalled();
+      });
+
+      it('shows the buttons again when the form is closed', async () => {
+        const { fixture, element } = await setupForm('take-out');
+        fixture.componentRef.setInput('unitsAction', null);
+        fixture.detectChanges();
+        expect(element.querySelector('app-item-units-form')).toBeNull();
+        expect(rows(element)[1].querySelector('.item-actions')).not.toBeNull();
+      });
+    });
+
+    it('says in the delete confirmation that units are out', async () => {
+      const { fixture, element } = await setup([item('Nails', { quantity: 100, quantityOut: 20 })]);
+      fixture.componentRef.setInput('deletingId', 'id-Nails');
+      fixture.detectChanges();
+      expect(text(rows(element)[0], '.confirm span')).toBe(
+        'Delete "Nails"? 20 of 100 are out of the container. This cannot be undone.',
+      );
+    });
+  });
+
   describe('focusControl', () => {
+    it('puts the focus on "Take out", "Put back" and "Used"', async () => {
+      const { fixture, element } = await setup([item('Nails', { quantity: 100, quantityOut: 20 })]);
+      document.body.appendChild(fixture.nativeElement);
+      for (const control of ['take-out', 'put-back', 'used'] as const) {
+        fixture.componentInstance.focusControl('id-Nails', control);
+        expect(document.activeElement).toBe(element.querySelector(`.item-${control}`));
+      }
+    });
+
     async function setupAttached(deletingId: string | null = null) {
       const result = await setup([item('Nails'), item('Hammer')]);
       document.body.appendChild(result.fixture.nativeElement);

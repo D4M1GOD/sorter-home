@@ -11,6 +11,7 @@ describe('delete questions', () => {
       id: `item-${index}`,
       name: `Item ${index}`,
       quantity,
+      quantityOut: 0,
       description: '',
       category: '',
     }));
@@ -22,6 +23,21 @@ describe('delete questions', () => {
         'Delete "Hammer"? This cannot be undone.',
       );
       expect(itemDeleteQuestion(items(1, 50)[0])).toBe('Delete "Item 0"? This cannot be undone.');
+    });
+
+    it('says how many units are out of the container', () => {
+      expect(itemDeleteQuestion({ name: 'Nails', quantity: 100, quantityOut: 20 })).toBe(
+        'Delete "Nails"? 20 of 100 are out of the container. This cannot be undone.',
+      );
+      expect(itemDeleteQuestion({ name: 'Lights', quantity: 4, quantityOut: 4 })).toBe(
+        'Delete "Lights"? 4 of 4 are out of the container. This cannot be undone.',
+      );
+    });
+
+    it('keeps the short question when no unit is out', () => {
+      expect(itemDeleteQuestion({ name: 'Nails', quantity: 100, quantityOut: 0 })).toBe(
+        'Delete "Nails"? This cannot be undone.',
+      );
     });
   });
 

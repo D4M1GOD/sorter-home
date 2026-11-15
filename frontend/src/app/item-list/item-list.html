@@ -24,7 +24,20 @@
           @if (row.description) {
             <p class="item-description">{{ row.description }}</p>
           }
-          @if (row.id === deletingId()) {
+          @if (row.outLabel) {
+            <!-- Units out of the container: said with text inside a box, never with color alone. -->
+            <p class="item-out">{{ row.outLabel }}</p>
+          }
+          @if (row.id === unitsAction()?.itemId) {
+            <!-- The small form takes the place of the buttons of the row. -->
+            <app-item-units-form
+              class="item-units"
+              [item]="row.item"
+              [mode]="unitsAction()!.mode"
+              (submitted)="unitsSubmitted.emit($event)"
+              (closed)="unitsCancelled.emit()"
+            />
+          } @else if (row.id === deletingId()) {
             <div class="confirm item-confirm" role="alert" (keydown.escape)="deleteCancelled.emit()">
               <span>{{ row.deleteQuestion }}</span>
               <button
@@ -43,8 +56,45 @@
               </button>
             </div>
           } @else {
+            @if (row.hasOut) {
+              <!-- Only for units that are out. The name of each button has the item name. -->
+              <div class="item-out-actions">
+                <button
+                  class="button item-put-back"
+                  type="button"
+                  [attr.aria-label]="'Put back ' + row.name"
+                  (click)="unitsRequested.emit({ itemId: row.id, mode: 'put-back' })"
+                >
+                  Put back
+                </button>
+                <button
+                  class="button item-used"
+                  type="button"
+                  [attr.aria-label]="'Used ' + row.name"
+                  (click)="unitsRequested.emit({ itemId: row.id, mode: 'used' })"
+                >
+                  Used
+                </button>
+              </div>
+            }
             <div class="item-actions">
               <!-- The icons are drawn here (no icon library). The name of each button has the item name. -->
+              @if (row.hasInside) {
+                <button
+                  class="icon-button item-take-out"
+                  type="button"
+                  [attr.aria-label]="'Take out ' + row.name"
+                  [attr.title]="'Take out ' + row.name"
+                  (click)="unitsRequested.emit({ itemId: row.id, mode: 'take-out' })"
+                >
+                  <!-- A box open at the top, with an arrow leaving it upwards. -->
+                  <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                    <path d="M5 12v8h14v-8" />
+                    <path d="M12 16V3" />
+                    <path d="M8 7l4-4 4 4" />
+                  </svg>
+                </button>
+              }
               <button
                 class="icon-button item-edit"
                 type="button"

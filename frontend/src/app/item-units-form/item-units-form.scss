@@ -1,0 +1,29 @@
+:host {
+  display: block;
+}
+
+.units-form {
+  padding: 0.75rem;
+  border: 1px solid #d1d5db;
+  border-radius: 0.25rem;
+}
+
+h4 {
+  margin: 0 0 0.75rem;
+  font-size: 1rem;
+  overflow-wrap: anywhere;
+}
+
+.field {
+  margin-bottom: 0.75rem;
+}
+
+// The global style gives text inputs a 0.5rem right margin: leave room for it.
+input {
+  box-sizing: border-box;
+  width: calc(100% - 0.5rem);
+}
+
+.field-error {
+  margin: 0.25rem 0 0;
+}

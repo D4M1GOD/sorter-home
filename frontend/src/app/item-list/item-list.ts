@@ -1,22 +1,36 @@
 import { Component, computed, ElementRef, inject, input, output } from '@angular/core';
 import { itemDeleteQuestion } from '../core/delete-question';
-import { Item, ItemDraft, sortItemsByName } from '../core/item.model';
+import { Item, ItemDraft, sortItemsByName, unitsInside } from '../core/item.model';
 import { ItemForm } from '../item-form/item-form';
+import {
+  ItemUnitsForm,
+  ItemUnitsMode,
+  ItemUnitsSubmitted,
+} from '../item-units-form/item-units-form';
 
 /** A control of a row that can take the keyboard focus (see `focusControl`). */
-export type ItemRowControl = 'edit' | 'delete' | 'cancel-delete';
+export type ItemRowControl = 'edit' | 'delete' | 'cancel-delete' | 'take-out' | 'put-back' | 'used';
+
+/** The row and the form the user asked for: take out, put back or used. */
+export interface ItemUnitsRequested {
+  itemId: string;
+  mode: ItemUnitsMode;
+}
 
 /**
  * The items of the selected container, in alphabetical order. Each row shows the name, the
- * quantity ("Qty 3", or "None left" when it is 0), the category and the full description, and
- * below them the "Edit" and "Delete" icon buttons. The row being edited shows the item form in
- * its place, and the row being deleted shows the confirmation in place of its buttons.
+ * quantity ("Qty 3", or "None left" when it is 0), the category and the full description. When
+ * units are out of the container the row says how many ("20 of 100 out") and has the "Put back"
+ * and "Used" buttons. Below are the icon buttons: "Take out" (only when units are inside),
+ * "Edit" and "Delete". The row being edited shows the item form in its place; the row being
+ * deleted shows the confirmation in place of its buttons, and so does the small form of take
+ * out, put back and used.
  * It does not change the items and it does not decide which row is open: it emits what the user
  * asks for, and the panel decides.
  */
 @Component({
   selector: 'app-item-list',
-  imports: [ItemForm],
+  imports: [ItemForm, ItemUnitsForm],
   templateUrl: './item-list.html',
   styleUrl: './item-list.scss',
 })
@@ -29,6 +43,16 @@ export class ItemList {
   readonly deletingId = input<string | null>(null);
   /** The categories already in use, offered as suggestions in the edit form. */
   readonly categories = input<readonly string[]>([]);
+
+  /** The item whose row shows the small form of take out, put back or used. Null when none does. */
+  readonly unitsAction = input<ItemUnitsRequested | null>(null);
+
+  /** The user pressed "Take out", "Put back" or "Used" on a row. Nothing changes yet. */
+  readonly unitsRequested = output<ItemUnitsRequested>();
+  /** The user chose an action in the small form, with a valid quantity. */
+  readonly unitsSubmitted = output<ItemUnitsSubmitted>();
+  /** The user closed the small form without doing anything ("Cancel" or the Escape key). */
+  readonly unitsCancelled = output<void>();
 
   /** The user pressed "Edit" on the row of this item id. */
   readonly editRequested = output<string>();
@@ -51,6 +75,10 @@ export class ItemList {
       item,
       name: item.name,
       quantity: item.quantity === 0 ? 'None left' : `Qty ${item.quantity}`,
+      // "20 of 100 out", also when all the units are out ("4 of 4 out"). Empty when none is out.
+      outLabel: item.quantityOut > 0 ? `${item.quantityOut} of ${item.quantity} out` : '',
+      hasOut: item.quantityOut > 0,
+      hasInside: unitsInside(item) > 0,
       category: item.category,
       description: item.description,
       deleteQuestion: itemDeleteQuestion(item),
@@ -58,8 +86,8 @@ export class ItemList {
   );
 
   /**
-   * Puts the keyboard focus on a control of the row of an item: its "Edit" or "Delete" button,
-   * or the "Cancel" button of its delete confirmation. It does nothing if the row or the control
+   * Puts the keyboard focus on a control of the row of an item: one of its buttons ("Take out",
+   * "Put back", "Used", "Edit", "Delete") or the "Cancel" button of its delete confirmation. It does nothing if the row or the control
    * is not drawn. The panel calls it after a form or a confirmation closes, so the focus is not
    * lost with the element that had it.
    */

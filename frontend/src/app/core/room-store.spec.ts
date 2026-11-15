@@ -977,12 +977,20 @@ describe('RoomStore items', () => {
         id: 'item-1',
         name: '  Nails ',
         quantity: 5,
+        quantityOut: 2,
         description: ' Line 1\nLine 2 ',
         category: '  Power   tools ',
       };
       expect(store.addItem(room.id, toys.id, raw)).toBe(true);
       expect(itemsOf(store, room.id, toys.id)).toEqual([
-        { id: 'item-1', name: 'Nails', quantity: 5, description: 'Line 1\nLine 2', category: 'Power tools' },
+        {
+          id: 'item-1',
+          name: 'Nails',
+          quantity: 5,
+          quantityOut: 2,
+          description: 'Line 1\nLine 2',
+          category: 'Power tools',
+        },
       ]);
     });
 
@@ -1190,7 +1198,11 @@ describe('RoomStore items', () => {
         category: 'Electronics',
       };
       expect(store.updateItem(room.id, toys.id, cables.id, draft)).toBe(true);
-      expect(itemsOf(store, room.id, toys.id)[1]).toEqual({ id: cables.id, ...draft });
+      expect(itemsOf(store, room.id, toys.id)[1]).toEqual({
+        id: cables.id,
+        quantityOut: 0,
+        ...draft,
+      });
     });
 
     it('keeps the id and the place of the item in the stored order, and the other items', () => {
@@ -1223,6 +1235,7 @@ describe('RoomStore items', () => {
         id: cables.id,
         name: 'Cords',
         quantity: 2,
+        quantityOut: 0,
         description: 'Line 1\nLine 2',
         category: 'Power tools',
       });
@@ -1371,6 +1384,201 @@ describe('RoomStore items', () => {
     });
   });
 
+  describe('take out, put back and used', () => {
+    /** A store with "Nails" (100 units, none out) and "Cables" in "Toys". */
+    function storeWithNails() {
+      const ctx = storeWithContainers();
+      const nails = item('Nails', { quantity: 100, description: 'Box of 100', category: 'Hardware' });
+      const cables = item('Cables', { quantity: 4 });
+      ctx.store.addItem(ctx.room.id, ctx.toys.id, nails);
+      ctx.store.addItem(ctx.room.id, ctx.toys.id, cables);
+      const amounts = () => {
+        const saved = itemsOf(ctx.store, ctx.room.id, ctx.toys.id)[0];
+        return [saved.quantity, saved.quantityOut];
+      };
+      return { ...ctx, nails, cables, amounts };
+    }
+
+    it('follows the example: take out 20, used 15, put back 5 leaves 85 with none out', () => {
+      const { store, room, toys, nails, amounts } = storeWithNails();
+      expect(store.takeOutItem(room.id, toys.id, nails.id, 20)).toBe(true);
+      expect(amounts()).toEqual([100, 20]);
+      expect(store.markUsedFromOut(room.id, toys.id, nails.id, 15)).toBe(true);
+      expect(amounts()).toEqual([85, 5]);
+      expect(store.putBackItem(room.id, toys.id, nails.id, 5)).toBe(true);
+      expect(amounts()).toEqual([85, 0]);
+    });
+
+    it('follows the example with the shortcut: used 15 from inside leaves 85 with none out', () => {
+      const { store, room, toys, nails, amounts } = storeWithNails();
+      expect(store.markUsedFromInside(room.id, toys.id, nails.id, 15)).toBe(true);
+      expect(amounts()).toEqual([85, 0]);
+    });
+
+    it('using units from inside does not change the units that are out', () => {
+      const { store, room, toys, nails, amounts } = storeWithNails();
+      store.takeOutItem(room.id, toys.id, nails.id, 20);
+      expect(store.markUsedFromInside(room.id, toys.id, nails.id, 80)).toBe(true);
+      expect(amounts()).toEqual([20, 20]);
+      // Nothing is left inside.
+      expect(store.markUsedFromInside(room.id, toys.id, nails.id, 1)).toBe(false);
+      expect(store.takeOutItem(room.id, toys.id, nails.id, 1)).toBe(false);
+      expect(amounts()).toEqual([20, 20]);
+    });
+
+    it('can take out all the units and put all of them back', () => {
+      const { store, room, toys, nails, amounts } = storeWithNails();
+      expect(store.takeOutItem(room.id, toys.id, nails.id, 100)).toBe(true);
+      expect(amounts()).toEqual([100, 100]);
+      expect(store.putBackItem(room.id, toys.id, nails.id, 100)).toBe(true);
+      expect(amounts()).toEqual([100, 0]);
+    });
+
+    it('keeps an item whose quantity reaches 0 in its container, in both ways of using', () => {
+      const { store, room, toys, nails, cables } = storeWithNails();
+      store.takeOutItem(room.id, toys.id, nails.id, 100);
+      expect(store.markUsedFromOut(room.id, toys.id, nails.id, 100)).toBe(true);
+      expect(store.markUsedFromInside(room.id, toys.id, cables.id, 4)).toBe(true);
+      expect(itemsOf(store, room.id, toys.id)).toEqual([
+        { ...nails, quantity: 0, quantityOut: 0 },
+        { ...cables, quantity: 0, quantityOut: 0 },
+      ]);
+    });
+
+    it('changes only the amounts of that item: its other fields, its place and the other items stay', () => {
+      const { store, room, toys, nails, cables } = storeWithNails();
+      store.takeOutItem(room.id, toys.id, nails.id, 20);
+      expect(itemsOf(store, room.id, toys.id)).toEqual([{ ...nails, quantityOut: 20 }, cables]);
+    });
+
+    it('saves each change in the browser storage: a new store finds it', () => {
+      const { store, room, toys, nails } = storeWithNails();
+      const saved = () => itemsOf(new RoomStore(), room.id, toys.id)[0];
+      store.takeOutItem(room.id, toys.id, nails.id, 20);
+      expect(saved()).toEqual({ ...nails, quantityOut: 20 });
+      store.putBackItem(room.id, toys.id, nails.id, 5);
+      expect(saved()).toEqual({ ...nails, quantityOut: 15 });
+      store.markUsedFromOut(room.id, toys.id, nails.id, 15);
+      expect(saved()).toEqual({ ...nails, quantity: 85, quantityOut: 0 });
+      store.markUsedFromInside(room.id, toys.id, nails.id, 5);
+      expect(saved()).toEqual({ ...nails, quantity: 80, quantityOut: 0 });
+    });
+
+    describe('when it fails, it returns false and changes nothing', () => {
+      type Ctx = ReturnType<typeof storeWithNails>;
+      type Method = 'takeOutItem' | 'putBackItem' | 'markUsedFromOut' | 'markUsedFromInside';
+      const methods: Method[] = ['takeOutItem', 'putBackItem', 'markUsedFromOut', 'markUsedFromInside'];
+
+      /** "Nails" starts with 100 units, 20 of them out: 80 inside. */
+      function expectNothingChanged(attempt: (ctx: Ctx) => boolean): void {
+        const ctx = storeWithNails();
+        ctx.store.takeOutItem(ctx.room.id, ctx.toys.id, ctx.nails.id, 20);
+        const roomsBefore = ctx.store.rooms();
+        const savedBefore = localStorage.getItem(ROOMS_STORAGE_KEY);
+        expect(attempt(ctx)).toBe(false);
+        expect(ctx.store.rooms()).toBe(roomsBefore);
+        expect(localStorage.getItem(ROOMS_STORAGE_KEY)).toBe(savedBefore);
+      }
+
+      it('unknown room, container or item, and an item of another container', () => {
+        for (const method of methods) {
+          expectNothingChanged(({ store, toys, nails }) => store[method]('nope', toys.id, nails.id, 1));
+          expectNothingChanged(({ store, room, nails }) => store[method](room.id, 'nope', nails.id, 1));
+          expectNothingChanged(({ store, room, toys }) => store[method](room.id, toys.id, 'nope', 1));
+          expectNothingChanged(({ store, room, books, nails }) =>
+            store[method](room.id, books.id, nails.id, 1),
+          );
+        }
+      });
+
+      it('units that are not a whole number from 1 up', () => {
+        for (const method of methods) {
+          for (const units of [0, -1, 1.5, Number.NaN, '3' as unknown as number]) {
+            expectNothingChanged(({ store, room, toys, nails }) =>
+              store[method](room.id, toys.id, nails.id, units),
+            );
+          }
+        }
+      });
+
+      it('more units than there are inside (take out, used from inside)', () => {
+        expectNothingChanged(({ store, room, toys, nails }) =>
+          store.takeOutItem(room.id, toys.id, nails.id, 81),
+        );
+        expectNothingChanged(({ store, room, toys, nails }) =>
+          store.markUsedFromInside(room.id, toys.id, nails.id, 81),
+        );
+      });
+
+      it('more units than there are out (put back, used from out)', () => {
+        expectNothingChanged(({ store, room, toys, nails }) =>
+          store.putBackItem(room.id, toys.id, nails.id, 21),
+        );
+        expectNothingChanged(({ store, room, toys, nails }) =>
+          store.markUsedFromOut(room.id, toys.id, nails.id, 21),
+        );
+      });
+
+      it('put back or used from out when no unit is out', () => {
+        const { store, room, toys, cables } = storeWithNails();
+        expect(store.putBackItem(room.id, toys.id, cables.id, 1)).toBe(false);
+        expect(store.markUsedFromOut(room.id, toys.id, cables.id, 1)).toBe(false);
+      });
+    });
+
+    describe('editing an item with units out', () => {
+      it('keeps the units out when the item is edited', () => {
+        const { store, room, toys, nails, amounts } = storeWithNails();
+        store.takeOutItem(room.id, toys.id, nails.id, 20);
+        expect(store.updateItem(room.id, toys.id, nails.id, { ...nails, name: 'Screws' })).toBe(true);
+        expect(amounts()).toEqual([100, 20]);
+        expect(store.updateItem(room.id, toys.id, nails.id, { ...nails, quantity: 50 })).toBe(true);
+        expect(amounts()).toEqual([50, 20]);
+      });
+
+      it('ignores units out sent with the new values', () => {
+        const { store, room, toys, nails, amounts } = storeWithNails();
+        store.takeOutItem(room.id, toys.id, nails.id, 20);
+        const draft = { ...nails, name: 'Screws', quantityOut: 0 } as ItemDraft;
+        store.updateItem(room.id, toys.id, nails.id, draft);
+        expect(amounts()).toEqual([100, 20]);
+      });
+
+      it('accepts a quantity equal to the units out', () => {
+        const { store, room, toys, nails, amounts } = storeWithNails();
+        store.takeOutItem(room.id, toys.id, nails.id, 20);
+        expect(store.updateItem(room.id, toys.id, nails.id, { ...nails, quantity: 20 })).toBe(true);
+        expect(amounts()).toEqual([20, 20]);
+      });
+
+      it('rejects a quantity lower than the units out, and changes nothing', () => {
+        const { store, room, toys, nails, amounts } = storeWithNails();
+        store.takeOutItem(room.id, toys.id, nails.id, 20);
+        const roomsBefore = store.rooms();
+        const savedBefore = localStorage.getItem(ROOMS_STORAGE_KEY);
+        for (const quantity of [19, 0]) {
+          expect(
+            store.updateItem(room.id, toys.id, nails.id, { ...nails, name: 'Screws', quantity }),
+          ).toBe(false);
+        }
+        expect(store.rooms()).toBe(roomsBefore);
+        expect(localStorage.getItem(ROOMS_STORAGE_KEY)).toBe(savedBefore);
+        expect(amounts()).toEqual([100, 20]);
+      });
+    });
+
+    describe('adding an item', () => {
+      it('rejects units out that are not a whole number from 0 to the quantity', () => {
+        const { store, room, toys } = storeWithContainers();
+        for (const quantityOut of [-1, 2, 0.5, Number.NaN, undefined as unknown as number]) {
+          const roomsBefore = store.rooms();
+          expect(store.addItem(room.id, toys.id, { ...item('Nails'), quantityOut })).toBe(false);
+          expect(store.rooms()).toBe(roomsBefore);
+        }
+      });
+    });
+  });
+
   describe('removeItem', () => {
     it('removes only that item and keeps the order of the others', () => {
       const { store, room, toys, books } = storeWithContainers();
@@ -1487,6 +1695,7 @@ describe('RoomStore items', () => {
       id: 'item-1',
       name: 'Nails',
       quantity: 100,
+      quantityOut: 20,
       description: 'Box of 100\n2 in',
       category: 'Hardware',
     };
@@ -1528,7 +1737,14 @@ describe('RoomStore items', () => {
     });
 
     it('loads well-formed items as they are, in the saved order', () => {
-      const second: Item = { id: 'item-2', name: 'Cables', quantity: 0, description: '', category: '' };
+      const second: Item = {
+        id: 'item-2',
+        name: 'Cables',
+        quantity: 0,
+        quantityOut: 0,
+        description: '',
+        category: '',
+      };
       expect(load([goodItem, second]).items).toEqual([goodItem, second]);
     });
 
@@ -1625,9 +1841,59 @@ describe('RoomStore items', () => {
         { ...goodItem, id: 'b', description: 7, category: ['Hardware'] },
       ]);
       expect(items).toEqual([
-        { id: 'a', name: 'Nails', quantity: 1, description: '', category: '' },
-        { id: 'b', name: 'Nails', quantity: 100, description: '', category: '' },
+        { id: 'a', name: 'Nails', quantity: 1, quantityOut: 0, description: '', category: '' },
+        { id: 'b', name: 'Nails', quantity: 100, quantityOut: 20, description: '', category: '' },
       ]);
+    });
+
+    describe('units out', () => {
+      it('loads an item saved before the units out existed with none out', () => {
+        const { quantityOut: _quantityOut, ...old } = goodItem;
+        expect(load([old]).items).toEqual([{ ...goodItem, quantityOut: 0 }]);
+      });
+
+      it('uses 0 when the saved units out are not a number', () => {
+        const { items } = load([
+          { ...goodItem, id: 'a', quantityOut: '20' },
+          { ...goodItem, id: 'b', quantityOut: null },
+          { ...goodItem, id: 'c', quantityOut: true },
+          { ...goodItem, id: 'd', quantityOut: [20] },
+        ]);
+        expect(items?.map((i) => i.quantityOut)).toEqual([0, 0, 0, 0]);
+        expect(items?.map((i) => i.quantity)).toEqual([100, 100, 100, 100]);
+      });
+
+      it('rounds the units out and uses 0 for a negative number', () => {
+        const { items } = load([
+          { ...goodItem, id: 'a', quantityOut: 19.6 },
+          { ...goodItem, id: 'b', quantityOut: -5 },
+          { ...goodItem, id: 'c', quantityOut: 0 },
+          { ...goodItem, id: 'd', quantityOut: 100 },
+        ]);
+        expect(items?.map((i) => i.quantityOut)).toEqual([20, 0, 0, 100]);
+      });
+
+      it('lowers units out that are above the quantity to the quantity, and keeps the quantity', () => {
+        const { items } = load([
+          { ...goodItem, id: 'a', quantity: 4, quantityOut: 10 },
+          { ...goodItem, id: 'b', quantity: 0, quantityOut: 3 },
+          // The quantity is repaired first (to 1), and the units out follow it.
+          { ...goodItem, id: 'c', quantity: 'many', quantityOut: 7 },
+        ]);
+        expect(items?.map((i) => [i.quantity, i.quantityOut])).toEqual([
+          [4, 4],
+          [0, 0],
+          [1, 1],
+        ]);
+      });
+
+      it('never discards an item for its units out', () => {
+        const { items } = load([
+          { ...goodItem, id: 'a', quantityOut: 'x' },
+          { ...goodItem, id: 'b', quantityOut: 99999 },
+        ]);
+        expect(items?.map((i) => i.id)).toEqual(['a', 'b']);
+      });
     });
 
     it('trims a description and cuts one that is too long to 500 characters, keeping its line breaks', () => {

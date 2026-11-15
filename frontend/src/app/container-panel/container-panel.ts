@@ -15,9 +15,19 @@ import { ContainerStack } from '../container-stack/container-stack';
 import { containerNameSchema } from '../core/container-name-schema';
 import { Container, getContainerType, isValidContainerName } from '../core/container.model';
 import { containerDeleteQuestion } from '../core/delete-question';
-import { ItemDraft, sortItemsByName } from '../core/item.model';
+import {
+  Item,
+  ItemDraft,
+  markUsedFromInside,
+  markUsedFromOut,
+  putBack,
+  sortItemsByName,
+  takeOut,
+  unitsInside,
+} from '../core/item.model';
 import { ItemForm } from '../item-form/item-form';
-import { ItemList } from '../item-list/item-list';
+import { ItemList, ItemRowControl, ItemUnitsRequested } from '../item-list/item-list';
+import { ItemUnitsMode, ItemUnitsSubmitted } from '../item-units-form/item-units-form';
 
 /** The new values of an item the user edited, and the id of that item. */
 export interface ItemEdited {
@@ -30,15 +40,37 @@ type ItemAction =
   | { kind: 'none' }
   | { kind: 'adding' }
   | { kind: 'editing'; itemId: string }
-  | { kind: 'deleting'; itemId: string };
+  | { kind: 'deleting'; itemId: string }
+  | { kind: 'units'; itemId: string; mode: ItemUnitsMode };
+
+/** The action the user chose for some units of an item, and the id of that item. */
+export interface ItemUnitsChanged extends ItemUnitsSubmitted {
+  itemId: string;
+}
 
 const NO_ITEM_ACTION: ItemAction = { kind: 'none' };
 
 /**
+ * The button of the row that takes the focus after a take out, put back or used. It is the
+ * button that opened the form when the row still has it. "Take out" is only there while units
+ * are inside, and "Put back" and "Used" only while units are out, so when the button is gone
+ * the focus goes to the nearest one: "Put back" after the last units inside left, "Take out"
+ * after the last units out came back or were used, and "Edit" (always there) when no unit is left.
+ */
+function controlAfterUnits(mode: ItemUnitsMode, after: Item): ItemRowControl {
+  const inside = unitsInside(after) > 0;
+  const out = after.quantityOut > 0;
+  if (mode === 'take-out') {
+    return inside ? 'take-out' : out ? 'put-back' : 'edit';
+  }
+  return out ? mode : inside ? 'take-out' : 'edit';
+}
+
+/**
  * Details of the selected container: its type (read only), an editable name, the list of its
  * stack (when it has more than one container), Rotate 90°, a message area, its items (with the
- * "Add item" form, and the edit form and the delete confirmation of each item), and Delete with
- * an inline confirmation. It does not save anything: it emits events and the page saves.
+ * "Add item" form, and the edit form, the delete confirmation and the take out, put back and
+ * used forms of each item), and Delete with an inline confirmation. It does not save anything: it emits events and the page saves.
  */
 @Component({
   selector: 'app-container-panel',
@@ -81,6 +113,8 @@ export class ContainerPanel {
   readonly itemEdited = output<ItemEdited>();
   /** The user confirmed the delete of the item with this id. The page removes it. */
   readonly itemRemoved = output<string>();
+  /** The user took out, put back or marked as used some units of an item. The page saves it. */
+  readonly itemUnitsChanged = output<ItemUnitsChanged>();
 
   /** The new, trimmed name. Only emitted when the name is valid and changed. */
   readonly renamed = output<string>();
@@ -113,8 +147,9 @@ export class ContainerPanel {
   private readonly containerId = computed(() => this.container().id);
 
   /**
-   * What is open in the items section: the "Add item" form, the edit form of one item, or the
-   * delete confirmation of one item. Only one at a time: starting another closes the one before
+   * What is open in the items section: the "Add item" form, the edit form of one item, the
+   * delete confirmation of one item, or the take out, put back or used form of one item. Only
+   * one at a time: starting another closes the one before
    * and discards what was typed. It also closes when another container is selected. Changing the
    * container (for example adding an item to it) does not change its id, so it stays open.
    */
@@ -136,9 +171,16 @@ export class ContainerPanel {
     return action.kind === 'deleting' ? action.itemId : null;
   });
 
+  /** The row that shows the take out, put back or used form, and which of the three, or null. */
+  protected readonly itemUnitsAction = computed<ItemUnitsRequested | null>(() => {
+    const action = this.itemAction();
+    return action.kind === 'units' ? { itemId: action.itemId, mode: action.mode } : null;
+  });
+
   /**
-   * "Saved <name>" or "Deleted <name>" after an item is edited or removed. It is cleared when
-   * another action starts and when another container is selected.
+   * What the last action on an item did: "Saved <name>", "Deleted <name>", "Took out 20 of
+   * <name>", "Put back 5 of <name>" or "Marked 15 of <name> as used". It is cleared when another
+   * action starts and when another container is selected.
    */
   protected readonly itemNotice = linkedSignal({
     source: this.containerId,
@@ -235,6 +277,67 @@ export class ContainerPanel {
         this.addItemButton()?.nativeElement.focus();
       }
     });
+  }
+
+  /**
+   * Opens the take out, put back or used form in the row of the item. The form puts the focus
+   * on its quantity field.
+   */
+  protected startItemUnits(requested: ItemUnitsRequested): void {
+    this.itemAction.set({ kind: 'units', itemId: requested.itemId, mode: requested.mode });
+    this.itemNotice.set('');
+  }
+
+  /** Closes the form without changing anything and gives the focus back to the button that opened it. */
+  protected cancelItemUnits(): void {
+    const action = this.itemUnitsAction();
+    this.itemAction.set(NO_ITEM_ACTION);
+    if (action) {
+      this.focusAfterRender(() => this.itemList()?.focusControl(action.itemId, action.mode));
+    }
+  }
+
+  /**
+   * Passes the action up, closes the form and says what was done. The focus goes back to the
+   * button that opened the form when the row still has it, and to the nearest one when it does
+   * not (see `controlAfterUnits`). Nothing happens if the units are not valid for the item.
+   */
+  protected submitItemUnits(submitted: ItemUnitsSubmitted): void {
+    const action = this.itemUnitsAction();
+    const item = this.container().items.find((i) => i.id === action?.itemId);
+    if (!action || !item) {
+      return;
+    }
+    const { units } = submitted;
+    // The same pure functions the store uses, to know how the item will be after the change.
+    let after: Item | null;
+    let notice: string;
+    switch (submitted.action) {
+      case 'take-out':
+        after = takeOut(item, units);
+        notice = `Took out ${units} of ${item.name}`;
+        break;
+      case 'put-back':
+        after = putBack(item, units);
+        notice = `Put back ${units} of ${item.name}`;
+        break;
+      case 'used-from-out':
+        after = markUsedFromOut(item, units);
+        notice = `Marked ${units} of ${item.name} as used`;
+        break;
+      case 'used-from-inside':
+        after = markUsedFromInside(item, units);
+        notice = `Marked ${units} of ${item.name} as used`;
+        break;
+    }
+    if (!after) {
+      return;
+    }
+    const control = controlAfterUnits(action.mode, after);
+    this.itemUnitsChanged.emit({ itemId: item.id, ...submitted });
+    this.itemAction.set(NO_ITEM_ACTION);
+    this.itemNotice.set(notice);
+    this.focusAfterRender(() => this.itemList()?.focusControl(item.id, control));
   }
 
   /** Runs `focus` once the page is drawn again, when the element to focus exists. */

@@ -9,8 +9,8 @@ import {
   output,
   signal,
 } from '@angular/core';
-import { form, FormField, submit } from '@angular/forms/signals';
-import { ItemFormModel, itemFormSchema } from '../core/item-schema';
+import { apply, form, FormField, submit, validate } from '@angular/forms/signals';
+import { ItemFormModel, itemFormSchema, quantityBelowOutError } from '../core/item-schema';
 import {
   Item,
   ITEM_DESCRIPTION_MAX_LENGTH,
@@ -70,7 +70,14 @@ export class ItemForm {
     const item = this.item();
     return item ? formOf(item) : emptyForm();
   });
-  protected readonly itemForm = form(this.model, itemFormSchema);
+  /** The units of the edited item that are out of its container. 0 when adding. */
+  protected readonly quantityOut = computed(() => this.item()?.quantityOut ?? 0);
+
+  protected readonly itemForm = form(this.model, (path) => {
+    apply(path, itemFormSchema);
+    // The quantity is the total: it cannot go below the units that are out of the container.
+    validate(path.quantity, ({ value }) => quantityBelowOutError(value(), this.quantityOut()));
+  });
 
   /** "Added <name>" after each item. It is empty until the first one is added. */
   protected readonly message = signal('');

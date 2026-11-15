@@ -1,0 +1,40 @@
+<form
+  class="units-form"
+  aria-labelledby="item-units-title"
+  novalidate
+  (submit)="onSubmit($event)"
+  (keydown.escape)="closed.emit()"
+>
+  <h4 id="item-units-title">{{ title() }}</h4>
+
+  <div class="field">
+    <label for="item-units">Quantity</label>
+    <!-- A text field with a numeric keyboard on phones. The form checks that it is a whole number. -->
+    <input
+      #unitsField
+      id="item-units"
+      type="text"
+      inputmode="numeric"
+      autocomplete="off"
+      [formField]="unitsForm.units"
+      [attr.aria-invalid]="unitsForm.units().touched() && unitsForm.units().invalid()"
+      aria-describedby="item-units-status"
+    />
+    <div id="item-units-status" role="alert">
+      @if (unitsForm.units().touched() && unitsForm.units().invalid()) {
+        @for (error of unitsForm.units().errors(); track error.kind) {
+          <p class="field-error">{{ error.message }}</p>
+        }
+      }
+    </div>
+  </div>
+
+  <div class="actions">
+    <!-- The submit button is the one the Enter key runs. -->
+    <button class="button button--primary" type="submit">{{ primaryLabel() }}</button>
+    @if (mode() === 'take-out') {
+      <button class="button" type="button" (click)="markUsed()">Mark as used</button>
+    }
+    <button class="button" type="button" (click)="closed.emit()">Cancel</button>
+  </div>
+</form>

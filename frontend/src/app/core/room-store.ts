@@ -12,6 +12,7 @@ import { normalizeStacks, removeFromStack, reorderStack, stackOf } from './conta
 import { canonicalCategory, cleanCategory, usedCategories } from './item-category';
 import {
   isValidItemDraft,
+  isValidQuantityOut,
   Item,
   ItemDraft,
   ITEM_CATEGORY_MAX_LENGTH,
@@ -20,6 +21,10 @@ import {
   ITEM_QUANTITY_DEFAULT,
   ITEM_QUANTITY_MAX,
   ITEM_QUANTITY_MIN,
+  markUsedFromInside,
+  markUsedFromOut,
+  putBack,
+  takeOut,
 } from './item.model';
 import {
   clampRoomSize,
@@ -107,6 +112,8 @@ function trimAndCut(text: string, maxLength: number): string {
  * - a name, description or category that is too long is cut to its maximum;
  * - a quantity that is a number is rounded and kept from 0 to 9999; if it is not a number it
  *   becomes 1;
+ * - the units out that are missing (items saved before they existed) or are not a number become
+ *   0; a number is rounded and kept from 0 to the quantity of the item;
  * - a description or category that is not text becomes empty.
  */
 function loadItems(value: unknown, seenIds: Set<string>): Item[] {
@@ -130,16 +137,22 @@ function loadItems(value: unknown, seenIds: Set<string>): Item[] {
         ? savedId
         : crypto.randomUUID();
     seenIds.add(id);
-    const quantity = saved['quantity'];
+    const savedQuantity = saved['quantity'];
+    const quantity =
+      typeof savedQuantity === 'number' && Number.isFinite(savedQuantity)
+        ? Math.min(ITEM_QUANTITY_MAX, Math.max(ITEM_QUANTITY_MIN, Math.round(savedQuantity)))
+        : ITEM_QUANTITY_DEFAULT;
+    const savedOut = saved['quantityOut'];
     const description = saved['description'];
     const category = saved['category'];
     items.push({
       id,
       name,
-      quantity:
-        typeof quantity === 'number' && Number.isFinite(quantity)
-          ? Math.min(ITEM_QUANTITY_MAX, Math.max(ITEM_QUANTITY_MIN, Math.round(quantity)))
-          : ITEM_QUANTITY_DEFAULT,
+      quantity,
+      quantityOut:
+        typeof savedOut === 'number' && Number.isFinite(savedOut)
+          ? Math.min(quantity, Math.max(0, Math.round(savedOut)))
+          : 0,
       description:
         typeof description === 'string' ? trimAndCut(description, ITEM_DESCRIPTION_MAX_LENGTH) : '',
       category:
@@ -490,7 +503,8 @@ export class RoomStore {
    * Adds an item to a container. The name and the description are saved trimmed. The category is
    * saved with the spelling already in use when it exists in any room ("navidad" becomes
    * "Navidad"). Returns false, and changes nothing, if the room or the container does not exist,
-   * a field of the item is not valid, or its id is missing or already used by another item.
+   * a field of the item is not valid (the units out must be a whole number from 0 to its
+   * quantity), or its id is missing or already used by another item.
    */
   addItem(roomId: string, containerId: string, item: Item): boolean {
     const room = this.getById(roomId);
@@ -500,6 +514,7 @@ export class RoomStore {
       typeof item.id !== 'string' ||
       item.id.length === 0 ||
       !isValidItemDraft(item) ||
+      !isValidQuantityOut(item.quantityOut, item.quantity) ||
       this.roomsState().some((r) => r.containers.some((c) => c.items.some((i) => i.id === item.id)))
     ) {
       return false;
@@ -508,6 +523,7 @@ export class RoomStore {
       id: item.id,
       name: item.name.trim(),
       quantity: item.quantity,
+      quantityOut: item.quantityOut,
       description: item.description.trim(),
       category: canonicalCategory(item.category, this.categories()),
     };
@@ -526,19 +542,22 @@ export class RoomStore {
    * compared with the categories of the other items (in any room): when one of them already uses
    * it, its spelling is reused; when no other item uses it, the cleaned text is saved, so the
    * spelling of a category with a single item can be corrected. The other items never change.
+   * The units that are out do not change, so the new quantity cannot be lower than them.
    * Returns false, and changes nothing, if the room, the container or the item does not exist,
-   * or a field is not valid. Returns true without writing when nothing changed.
+   * a field is not valid, or the quantity is lower than the units that are out. Returns true
+   * without writing when nothing changed.
    */
   updateItem(roomId: string, containerId: string, itemId: string, draft: ItemDraft): boolean {
     const container = this.getById(roomId)?.containers.find((c) => c.id === containerId);
     const current = container?.items.find((i) => i.id === itemId);
-    if (!current || !isValidItemDraft(draft)) {
+    if (!current || !isValidItemDraft(draft) || draft.quantity < current.quantityOut) {
       return false;
     }
     const saved: Item = {
       id: current.id,
       name: draft.name.trim(),
       quantity: draft.quantity,
+      quantityOut: current.quantityOut,
       description: draft.description.trim(),
       category: canonicalCategory(draft.category, usedCategories(this.roomsState(), itemId)),
     };
@@ -555,6 +574,72 @@ export class RoomStore {
       containers: r.containers.map((c) =>
         c.id === containerId
           ? { ...c, items: c.items.map((i) => (i.id === itemId ? saved : i)) }
+          : c,
+      ),
+    }));
+    return true;
+  }
+
+  /**
+   * Takes units of an item out of its container: they are counted as out and the quantity does
+   * not change. Returns false, and changes nothing, if the room, the container or the item does
+   * not exist, or `units` is not a whole number from 1 to the units inside.
+   */
+  takeOutItem(roomId: string, containerId: string, itemId: string, units: number): boolean {
+    return this.changeItem(roomId, containerId, itemId, (item) => takeOut(item, units));
+  }
+
+  /**
+   * Puts units of an item that are out back in its container. Returns false, and changes
+   * nothing, if the room, the container or the item does not exist, or `units` is not a whole
+   * number from 1 to the units that are out.
+   */
+  putBackItem(roomId: string, containerId: string, itemId: string, units: number): boolean {
+    return this.changeItem(roomId, containerId, itemId, (item) => putBack(item, units));
+  }
+
+  /**
+   * Marks units of an item that are out as used: the quantity and the units out go down by that
+   * number. An item left with quantity 0 stays in its container. Returns false, and changes
+   * nothing, if the room, the container or the item does not exist, or `units` is not a whole
+   * number from 1 to the units that are out.
+   */
+  markUsedFromOut(roomId: string, containerId: string, itemId: string, units: number): boolean {
+    return this.changeItem(roomId, containerId, itemId, (item) => markUsedFromOut(item, units));
+  }
+
+  /**
+   * Marks units of an item that are inside its container as used, without taking them out
+   * first: the quantity goes down by that number and the units out do not change. An item left
+   * with quantity 0 stays in its container. Returns false, and changes nothing, if the room, the
+   * container or the item does not exist, or `units` is not a whole number from 1 to the units
+   * inside.
+   */
+  markUsedFromInside(roomId: string, containerId: string, itemId: string, units: number): boolean {
+    return this.changeItem(roomId, containerId, itemId, (item) => markUsedFromInside(item, units));
+  }
+
+  /**
+   * Replaces an item, in its place, with what `change` gives for it. Returns false, and changes
+   * nothing, if the room, the container or the item does not exist, or `change` gives null.
+   */
+  private changeItem(
+    roomId: string,
+    containerId: string,
+    itemId: string,
+    change: (item: Item) => Item | null,
+  ): boolean {
+    const container = this.getById(roomId)?.containers.find((c) => c.id === containerId);
+    const current = container?.items.find((i) => i.id === itemId);
+    const changed = current ? change(current) : null;
+    if (!changed) {
+      return false;
+    }
+    this.updateRoom(roomId, (r) => ({
+      ...r,
+      containers: r.containers.map((c) =>
+        c.id === containerId
+          ? { ...c, items: c.items.map((i) => (i.id === itemId ? changed : i)) }
           : c,
       ),
     }));

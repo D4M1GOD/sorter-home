@@ -303,6 +303,7 @@ describe('ItemForm', () => {
       id: 'item-1',
       name: 'Nails',
       quantity: 100,
+      quantityOut: 0,
       description: 'Box of 100\n2 in',
       category: 'Hardware',
     };
@@ -428,6 +429,75 @@ describe('ItemForm', () => {
       );
       expect(closed).toHaveBeenCalledTimes(2);
       expect(saved).not.toHaveBeenCalled();
+    });
+
+    describe('with units out of the container', () => {
+      const withOut: Item = { ...nails, quantityOut: 20 };
+
+      it('says under the quantity how many units are out, linked to the field', async () => {
+        const { element } = await setupEdit(withOut);
+        const hint = element.querySelector('#item-quantity-out');
+        expect(hint?.textContent?.trim()).toBe('20 are out of the container.');
+        expect(field(element, 'item-quantity').getAttribute('aria-describedby')).toBe(
+          'item-quantity-out item-quantity-status',
+        );
+        // The quantity is the total, not the units inside.
+        expect(field(element, 'item-quantity').value).toBe('100');
+      });
+
+      it('has no such text when no unit is out, or when adding', async () => {
+        const edit = await setupEdit();
+        expect(edit.element.querySelector('#item-quantity-out')).toBeNull();
+        expect(field(edit.element, 'item-quantity').getAttribute('aria-describedby')).toBe(
+          'item-quantity-status',
+        );
+        document.body.replaceChildren();
+        const add = await setup();
+        expect(add.element.querySelector('#item-quantity-out')).toBeNull();
+      });
+
+      it('blocks a quantity lower than the units out, with its own error, and saves nothing', async () => {
+        const { fixture, element, saved } = await setupEdit(withOut);
+        for (const quantity of ['19', '0']) {
+          type(element, 'item-quantity', quantity);
+          await submitForm(fixture, element);
+          expect(errors(element)).toEqual([
+            "Quantity can't be lower than the units that are out (20).",
+          ]);
+        }
+        expect(saved).not.toHaveBeenCalled();
+        expect(field(element, 'item-quantity').getAttribute('aria-invalid')).toBe('true');
+      });
+
+      it('accepts a quantity equal to or above the units out', async () => {
+        const { fixture, element, saved } = await setupEdit(withOut);
+        type(element, 'item-quantity', '20');
+        await submitForm(fixture, element);
+        expect(errors(element)).toEqual([]);
+        expect(saved).toHaveBeenCalledTimes(1);
+        expect(saved.mock.calls[0][0].quantity).toBe(20);
+      });
+
+      it('shows only the usual error for a quantity that is not a whole number', async () => {
+        const { fixture, element } = await setupEdit(withOut);
+        type(element, 'item-quantity', '1.5');
+        await submitForm(fixture, element);
+        expect(errors(element)).toEqual(['Quantity must be a whole number from 0 to 9999.']);
+      });
+
+      it('does not put the units out in what it emits', async () => {
+        const { fixture, element, saved } = await setupEdit(withOut);
+        await submitForm(fixture, element);
+        expect(saved.mock.calls[0][0]).not.toHaveProperty('quantityOut');
+      });
+
+      it('lets a new item have the quantity 0', async () => {
+        const { fixture, element, added } = await setup();
+        type(element, 'item-name', 'Nails');
+        type(element, 'item-quantity', '0');
+        await submitForm(fixture, element);
+        expect(added).toHaveBeenCalledTimes(1);
+      });
     });
   });
 });
