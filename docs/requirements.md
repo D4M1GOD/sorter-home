@@ -1,4 +1,4 @@
-# SorterHome — Requirements (v0.13)
+# SorterHome — Requirements (v0.14)
 
 Last updated: 2026-11-14
 Status: Requirements for v1 are agreed. Items marked **Open** still need a decision from the project owner.
@@ -39,12 +39,16 @@ The container panel has an **"Add item"** button (phase 3). Each item has:
 - Photo: **optional but recommended**. Exactly one photo per item, taken with the phone camera or uploaded as a file. The UI should encourage adding one (for example a clear "Add photo" prompt on items without a photo).
 
 ### Items that are out of their container
-An item can leave its container without losing its place. This is built in step 3.3.
+An item can leave its container without losing its place.
+- **Model:** the quantity of an item is the **total** the user owns: the units inside the container plus the units that are out. A second number, the units out (`quantityOut`), goes from 0 to the quantity. The units inside are the quantity minus the units out.
 - **Take out:** the user says how many units leave the container (pre-filled with all the units that are inside). The item stays in the list of its container and shows how many units are out, for example "20 of 100 out".
 - For the units that are out, the user chooses **Put back** (they return to the container) or **Used** (they will not return, so the total quantity goes down by that number).
 - Example, things that come back: "Christmas lights", quantity 4. Take out 4 shows "4 of 4 out"; in January, Put back 4.
 - Example, things that are used up: "Nails", quantity 100. Take out 20 shows "20 of 100 out"; 15 were used and 5 were left over, so Put back 5 and Used 15. The item becomes "Nails", quantity 85.
-- Editing the quantity directly (FR-10) stays available for corrections. **Open (step 3.3):** what happens to the units that are out when the quantity is edited to a lower number.
+- **Using units without taking them out:** units that are inside can be marked as used directly. The total quantity goes down by that number and the units out do not change. Example: "Nails", quantity 100, none out. Mark 15 as used: the item becomes "Nails", quantity 85, none out.
+- When the total reaches 0 the item stays in its container and shows "None left".
+- Editing the quantity directly (FR-10) stays available for corrections. The units out do not change when an item is edited, so a quantity lower than the units that are out is **blocked** with the error "Quantity can't be lower than the units that are out (N)." Nothing is adjusted silently: to reach quantity 0 the user first uses "Used" or "Put back".
+- There is no undo: a mistaken "used" is corrected by editing the quantity.
 - **Open (phase 4):** how search results show that an item is out, and a filter for the items that are out.
 
 ### Photos before the backend exists
@@ -88,14 +92,23 @@ localStorage holds about 5 MB in total and one phone photo weighs 2 to 5 MB, so 
   - **Adding several:** "Add" saves the item. The form stays open and clean, with the focus on "Name" and the message "Added <name>", so several items can be added in a row. "Done" or the Escape key closes the form. Selecting another container closes the form and discards what was typed.
   - **Errors:** "Item name is required.", "Item name must have at most 60 characters.", "Quantity is required.", "Quantity must be a whole number from 0 to 9999."
   - **List:** each row shows the name, the quantity ("Qty 3", or "None left" when it is 0), the category and the full description with its line breaks. The rows are in alphabetical order by name, ignoring upper/lower case; this is the display order only, the stored order is the order the items were added in. A container without items shows "No items yet."
-  - **Row buttons:** below the text of each row there are two icon buttons, "Edit" (a pencil) and "Delete" (a trash can), drawn as inline SVG (no icon library). Each one has an accessible name and a tooltip with the item name ("Edit Hammer", "Delete Hammer"), a touch target of 44 × 44 px with space between the two, and a visible focus ring for the keyboard. Their meaning does not rely on color alone. Two items with the same name have buttons with the same name.
+  - **Units out:** a row with units out also shows, below its text, a line in a bordered box with bold text: "20 of 100 out". The quantity stays the total: "Qty 100" and "20 of 100 out". When all the units are out the row shows "Qty 4" and "4 of 4 out", not "None left". "Out" is said with text, never with color alone.
+  - **Row buttons:** below the text of each row there are the icon buttons "Take out" (a box with an arrow leaving it; only when units are inside, see FR-10b), "Edit" (a pencil) and "Delete" (a trash can), in that order, drawn as inline SVG (no icon library). Each one has an accessible name and a tooltip with the item name ("Take out Hammer", "Edit Hammer", "Delete Hammer"), a touch target of 44 × 44 px with space between them, and a visible focus ring for the keyboard. Their meaning does not rely on color alone. Two items with the same name have buttons with the same name.
 - FR-10: Edit an item, change its quantity, and remove it.
-  - **Edit:** "Edit" opens the item form in place of that row, filled with the data of the item, with the title "Edit item", the buttons "Save" and "Cancel", and the focus on "Name". The fields, limits, category suggestions and errors are the ones of FR-9. The quantity is changed only through this form. The Escape key is the same as "Cancel".
+  - **Edit:** "Edit" opens the item form in place of that row, filled with the data of the item, with the title "Edit item", the buttons "Save" and "Cancel", and the focus on "Name". The fields, limits, category suggestions and errors are the ones of FR-9. The quantity (the total) is edited in this form; take out, put back and used have their own forms (FR-10b). When the item has units out, a text under "Quantity" says so ("20 are out of the container.") and a quantity lower than the units out gives the error "Quantity can't be lower than the units that are out (20)." The Escape key is the same as "Cancel".
   - **Save:** "Save" saves the item, closes the form, shows the message "Saved <name>" and puts the focus on the "Edit" button of that row, in its new place if the name changed. "Save" without changes does the same. The item keeps its id and its place in the stored order. The category follows the rule for editing in "Item fields". Nothing is saved until "Save": closing or reloading the page while the form is open leaves the item as it was.
-  - **Remove:** "Delete" asks in the row, in place of the two icon buttons, with the same inline confirmation as containers and rooms (no browser dialogs, no undo): `Delete "Hammer"? This cannot be undone.` with the buttons "Yes, delete" and "Cancel". The focus goes to "Cancel". After "Yes, delete" the message "Deleted <name>" is shown and the focus goes to the "Edit" button of the next row, or of the row before when the last row was removed, or to "Add item" when the list is left empty. "Cancel" or the Escape key closes the confirmation and puts the focus back on the "Delete" button of that row.
-  - **One at a time:** only one of these is open in the items section: the "Add item" form, the edit form of one item, or the delete confirmation of one item. Starting another one closes the one before and discards what was typed. Selecting another container closes it too.
-  - **Messages:** "Saved <name>" and "Deleted <name>" are shown in a status line of the items section, which screen readers announce. The line is cleared when another action starts or another container is selected.
+  - **Remove:** "Delete" asks in the row, in place of the buttons of that row, with the same inline confirmation as containers and rooms (no browser dialogs, no undo): `Delete "Hammer"? This cannot be undone.` with the buttons "Yes, delete" and "Cancel". When the item has units out the question says so: `Delete "Nails"? 20 of 100 are out of the container. This cannot be undone.` The focus goes to "Cancel". After "Yes, delete" the message "Deleted <name>" is shown and the focus goes to the "Edit" button of the next row, or of the row before when the last row was removed, or to "Add item" when the list is left empty. "Cancel" or the Escape key closes the confirmation and puts the focus back on the "Delete" button of that row.
+  - **One at a time:** only one of these is open in the items section: the "Add item" form, the edit form of one item, the delete confirmation of one item, or the take out, put back or used form of one item (FR-10b). Starting another one closes the one before and discards what was typed. Selecting another container closes it too.
+  - **Messages:** "Saved <name>" and "Deleted <name>", and the messages of FR-10b, are shown in a status line of the items section, which screen readers announce. The line is cleared when another action starts or another container is selected.
 - FR-10b: Take units of an item out of its container, put them back, or mark them as used (see "Items that are out of their container").
+  - **Buttons:** "Take out" is an icon button of the row (FR-9), shown only when units are inside. "Put back" and "Used" are text buttons below the "20 of 100 out" line, shown only when units are out; their accessible names have the item name ("Put back Nails", "Used Nails").
+  - **Forms:** each button opens a small form in the row, in place of the buttons of that row (the text of the row stays). It has one field, "Quantity" (a text field with a numeric keyboard), with the focus on it and its text selected, and "Cancel". Nothing is saved until an action button is pressed. The Escape key is the same as "Cancel". The rule "one at a time" of FR-10 applies.
+  - **Take out or use:** the form of "Take out" has the title "Take out or use <name>" and the quantity pre-filled with all the units inside (range: 1 to the units inside). It has two actions for that quantity. "Take out": the units go out and the quantity does not change. "Mark as used": the quantity goes down by that number, without going through "out", and the units out do not change. The Enter key always runs "Take out", because it can be reverted with "Put back"; "Mark as used" needs a click.
+  - **Put back:** title "Put back <name>", button "Put back", quantity pre-filled with all the units out (range: 1 to the units out). The units return to the container.
+  - **Used:** title "Mark <name> as used", button "Used", quantity pre-filled with all the units out (range: 1 to the units out). The quantity and the units out go down by that number.
+  - **Errors:** "Quantity is required." and "Quantity must be a whole number from 1 to 80." (the maximum of that form; "Quantity must be 1." when the maximum is 1). Only whole numbers are accepted and nothing is rounded.
+  - **Messages:** "Took out 20 of Nails", "Put back 5 of Nails" and "Marked 15 of Nails as used" (for both ways of using units), in the status line of FR-10.
+  - **Focus:** after an action the focus returns to the button that opened the form if the row still has it. If it is gone, the focus goes to the nearest one: to "Put back" when no units are left inside but some are out, to "Take out" when no units are out but some are inside, and to "Edit" when the quantity reached 0. "Cancel" or the Escape key puts the focus back on the button that opened the form.
 
 ### Search (phase after items)
 - FR-11: Search items by name and filter by category and room. Each result shows the location: room → container → stack level.
@@ -156,7 +169,7 @@ The room plan is drawn with SVG. Reasons: the plan has tens of objects (not thou
 
 - `/rooms/new` is declared before `/rooms/:id`, otherwise "new" would be read as a room id.
 - **Temporary storage:** rooms, with their containers and (from phase 3) their items, are kept in the browser's localStorage (key `sorterhome.rooms.v1`) through `RoomStore`. Stored data is validated on load and invalid entries are discarded. This storage is per browser: it is not shared across devices or people.
-- **Tolerant loading of items:** a container saved before items existed loads with an empty list. An item is discarded only when it has no usable name (missing, not text, or empty after trimming). Everything else is repaired and the item is kept: a missing or repeated id becomes a new id; a name, description or category that is too long is cut to its maximum; a quantity that is a number is rounded and kept between 0 and 9999, and one that is not a number becomes 1; a description or category that is not text becomes empty.
+- **Tolerant loading of items:** a container saved before items existed loads with an empty list. An item is discarded only when it has no usable name (missing, not text, or empty after trimming). Everything else is repaired and the item is kept: a missing or repeated id becomes a new id; a name, description or category that is too long is cut to its maximum; a quantity that is a number is rounded and kept between 0 and 9999, and one that is not a number becomes 1; the units out (`quantityOut`) that are missing (items saved before step 3.3) or are not a number become 0, and a number is rounded and kept between 0 and the quantity of the item (units out above the quantity are lowered to the quantity); a description or category that is not text becomes empty.
 - **Replacing it later:** when the backend exists, `RoomStore` is replaced by calls to the API. The routes stay the same. The pages will need loading and error states because network calls are asynchronous.
 - **Frontend conventions (Angular 22):** Signal Forms, the `@Service` decorator, lazy-loaded routes, Vitest for tests. Pages live in `src/app/pages/`, shared logic in `src/app/core/`.
 
@@ -171,7 +184,7 @@ The room plan is drawn with SVG. Reasons: the plan has tens of objects (not thou
 3. Items:
    - 3.1 Item model and storage, "Add item" form (name, quantity, description, category), item list in the container panel — **done**
    - 3.2 Edit an item, change its quantity, remove it — **done**
-   - 3.3 Take out, put back and used
+   - 3.3 Take out, put back and used — **done**
    - 3.4 Photo (IndexedDB, reduced in size before saving, "Add photo" prompt)
 4. Search and filters
 5. Deploy to the internet with CI
@@ -187,4 +200,5 @@ The room plan is drawn with SVG. Reasons: the plan has tens of objects (not thou
 - Verify touch gestures on real devices (Android Chrome, iOS Safari) once the app is deployed; the browser emulation does not reproduce iOS Safari.
 - When the browser storage is full or not available, the write error is ignored: the change stays in memory, the user sees no message, and it is lost when the page is reloaded.
 - Move an item to another container (today the item must be removed and added again).
+- A history of the movements of each item: every take out, put back and used is recorded, with the option to undo any of them. It would also tell the user where the units went, and it would help the search phase. Until then, a mistaken "used" is corrected with Edit.
 - The delete confirmations of containers and rooms lose the keyboard focus when they open, because the "Delete" button is replaced by the confirmation. The confirmation of an item already moves the focus to "Cancel".
