@@ -56,6 +56,21 @@ h3 {
   overflow-wrap: anywhere;
 }
 
+// The hint under "Add item" and "Add several photos": small, gray text (contrast 7.5:1 on white).
+.batch-hint {
+  margin: 0.25rem 0 0;
+  color: #4b5563;
+  font-size: 0.875rem;
+}
+
+// The files of a batch that failed, one per line, below the summary.
+.batch-failures {
+  margin: 0.25rem 0 0;
+  padding-left: 1.25rem;
+  font-size: 0.875rem;
+  overflow-wrap: anywhere;
+}
+
 app-item-list {
   margin-top: 0.75rem;
 }

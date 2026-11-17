@@ -9,6 +9,8 @@ import {
   putBack,
   takeOut,
 } from '../core/item.model';
+import { BatchResult, BatchRunOptions, ItemPhotoBatch } from '../core/item-photo-batch';
+import { PHOTO_BATCH_MAX } from '../core/photo-batch';
 import { PhotoProcessor } from '../core/photo-processor';
 import { PhotoStore } from '../core/photo-store';
 import {
@@ -66,7 +68,7 @@ describe('ContainerPanel', () => {
       Array.from(element.querySelectorAll('button')).map(
         (b) => b.getAttribute('aria-label') ?? b.textContent?.trim(),
       );
-    expect(labels()).toEqual(['Rotate 90°', 'Add item', 'Delete']);
+    expect(labels()).toEqual(['Rotate 90°', 'Add item', 'Add several photos', 'Delete']);
 
     const hammer = {
       id: 'item-1',
@@ -82,6 +84,7 @@ describe('ContainerPanel', () => {
     expect(labels()).toEqual([
       'Rotate 90°',
       'Add item',
+      'Add several photos',
       'Put back Hammer',
       'Used Hammer',
       'Add photo to Hammer',
@@ -1145,7 +1148,8 @@ describe('ContainerPanel', () => {
         }
 
         async function choosePhoto(fixture: ComponentFixture<unknown>, element: HTMLElement) {
-          const input = element.querySelector('input[type="file"]') as HTMLInputElement;
+          // The file field of the photo field of the item form, not the one of "Add several photos".
+          const input = element.querySelector('app-item-form input[type="file"]') as HTMLInputElement;
           const file = new File(['pixels'], 'nails.jpg', { type: 'image/jpeg' });
           Object.defineProperty(input, 'files', { value: [file], configurable: true });
           input.dispatchEvent(new Event('change'));
@@ -1395,6 +1399,473 @@ describe('ContainerPanel', () => {
         await click(fixture, element.querySelector('.item-confirm-delete') as HTMLButtonElement);
         expect(confirmSpy).not.toHaveBeenCalled();
         confirmSpy.mockRestore();
+      });
+    });
+
+    describe('add several photos', () => {
+      /** The fake batch: it reports its first photo and ends only when the test says so. */
+      let run: ReturnType<typeof vi.fn>;
+      let finish: (result: BatchResult) => void;
+      let options: BatchRunOptions;
+
+      beforeEach(() => {
+        run = vi.fn((chosen: File[], _containerId: string, runOptions: BatchRunOptions) => {
+          options = runOptions;
+          runOptions.onProgress(1, chosen.length);
+          return new Promise<BatchResult>((resolve) => (finish = resolve));
+        });
+        TestBed.configureTestingModule({
+          providers: [{ provide: ItemPhotoBatch, useValue: { run } }],
+        });
+      });
+
+      afterEach(() => {
+        document.body.replaceChildren();
+      });
+
+      const photoFile = (name: string) => new File(['pixels'], name, { type: 'image/jpeg' });
+
+      function ended(added: number, chosen: number, failures: BatchResult['failures'] = []): BatchResult {
+        return { added, chosen, failures, stopped: false };
+      }
+
+      /** A panel attached to the page, so the focus can be checked. */
+      async function setupBatch(items: Item[] = []) {
+        const result = await setupWithItems(items);
+        document.body.appendChild(result.fixture.nativeElement);
+        return result;
+      }
+
+      function batchButton(element: HTMLElement): HTMLButtonElement {
+        return button(element, 'Add several photos') as HTMLButtonElement;
+      }
+
+      function batchInput(element: HTMLElement): HTMLInputElement {
+        return element.querySelector('input[multiple]') as HTMLInputElement;
+      }
+
+      /** What the browser does after the user picks files: it fills the field and fires "change". */
+      async function pick(
+        fixture: ComponentFixture<unknown>,
+        element: HTMLElement,
+        names: string[],
+      ) {
+        const input = batchInput(element);
+        Object.defineProperty(input, 'files', { value: names.map(photoFile), configurable: true });
+        input.dispatchEvent(new Event('change'));
+        await settle();
+        fixture.detectChanges();
+        await fixture.whenStable();
+      }
+
+      /** The text of the status line, without the list of failed files. */
+      function status(element: HTMLElement): string {
+        const line = element.querySelector('.item-notice') as HTMLElement;
+        return Array.from(line.childNodes)
+          .filter((node) => node.nodeType === Node.TEXT_NODE)
+          .map((node) => node.textContent)
+          .join('')
+          .trim();
+      }
+
+      function failures(element: HTMLElement): string[] {
+        return Array.from(element.querySelectorAll('.item-notice .batch-failures li')).map(
+          (li) => li.textContent?.trim() ?? '',
+        );
+      }
+
+      async function finishWith(
+        fixture: ComponentFixture<unknown>,
+        result: BatchResult,
+      ): Promise<void> {
+        finish(result);
+        await settle();
+        fixture.detectChanges();
+        await fixture.whenStable();
+      }
+
+      describe('the button and its field', () => {
+        it('is next to "Add item", and its name is its visible text', async () => {
+          const { element } = await setupBatch();
+          const labels = Array.from(element.querySelectorAll('.items .actions button')).map((b) =>
+            b.textContent?.trim(),
+          );
+          expect(labels).toEqual(['Add item', 'Add several photos']);
+          expect(batchButton(element).type).toBe('button');
+          expect(batchButton(element).hasAttribute('aria-label')).toBe(false);
+          expect(batchButton(element).hasAttribute('aria-disabled')).toBe(false);
+        });
+
+        it('has a hidden file field for several images, without "capture"', async () => {
+          const { element } = await setupBatch();
+          const input = batchInput(element);
+          expect(input.type).toBe('file');
+          expect(input.getAttribute('accept')).toBe('image/*');
+          expect(input.multiple).toBe(true);
+          // With "capture" the browser would only take one photo.
+          expect(input.hasAttribute('capture')).toBe(false);
+          expect(input.hidden).toBe(true);
+          expect(input.getAttribute('tabindex')).toBe('-1');
+          expect(input.getAttribute('aria-hidden')).toBe('true');
+        });
+
+        describe('the hint', () => {
+          function hint(element: HTMLElement): HTMLElement | null {
+            return element.querySelector('.items .batch-hint');
+          }
+
+          it('is shown under the buttons, before the status line, as plain text', async () => {
+            const { element } = await setupBatch();
+            const text = hint(element) as HTMLElement;
+            expect(text.tagName).toBe('P');
+            expect(text.textContent?.trim()).toBe('Up to 20 photos at a time.');
+            expect(text.hasAttribute('role')).toBe(false);
+            const buttons = element.querySelector('.items .actions') as Element;
+            const line = element.querySelector('.item-notice') as Element;
+            expect(
+              buttons.compareDocumentPosition(text) & Node.DOCUMENT_POSITION_FOLLOWING,
+            ).toBeTruthy();
+            expect(
+              text.compareDocumentPosition(line) & Node.DOCUMENT_POSITION_FOLLOWING,
+            ).toBeTruthy();
+          });
+
+          it('takes the number from the limit of the batch', async () => {
+            const { element } = await setupBatch();
+            expect(hint(element)?.textContent?.trim()).toBe(
+              `Up to ${PHOTO_BATCH_MAX} photos at a time.`,
+            );
+          });
+
+          it('is linked to the "Add several photos" button, which keeps its name and its text', async () => {
+            const { element } = await setupBatch();
+            const batch = batchButton(element);
+            const id = batch.getAttribute('aria-describedby') as string;
+            expect(id).toBeTruthy();
+            expect(element.querySelector(`#${id}`)).toBe(hint(element));
+            expect(batch.textContent?.trim()).toBe('Add several photos');
+            expect(batch.hasAttribute('aria-label')).toBe(false);
+            expect(button(element, 'Add item')?.hasAttribute('aria-describedby')).toBe(false);
+          });
+
+          it('goes away with the buttons while the "Add item" form is open, and comes back with them', async () => {
+            const { fixture, element } = await setupBatch();
+            await openForm(fixture, element);
+            expect(hint(element)).toBeNull();
+            expect(element.querySelector('#batch-hint')).toBeNull();
+            button(element, 'Done')?.click();
+            fixture.detectChanges();
+            expect(hint(element)?.textContent?.trim()).toBe('Up to 20 photos at a time.');
+            expect(batchButton(element).getAttribute('aria-describedby')).toBe('batch-hint');
+          });
+
+          it('stays while a batch runs, because the button stays', async () => {
+            const { fixture, element } = await setupBatch();
+            await pick(fixture, element, ['a.jpg']);
+            expect(hint(element)?.textContent?.trim()).toBe('Up to 20 photos at a time.');
+          });
+
+          it('does not change the status line: it is empty and the hint is not in it', async () => {
+            const { element } = await setupBatch();
+            expect(status(element)).toBe('');
+            expect(element.querySelector('.item-notice .batch-hint')).toBeNull();
+          });
+        });
+
+        it('opens the file picker when it is pressed', async () => {
+          const { element } = await setupBatch();
+          const click = vi.spyOn(batchInput(element), 'click').mockImplementation(() => undefined);
+          batchButton(element).click();
+          expect(click).toHaveBeenCalledTimes(1);
+        });
+
+        it('starts nothing by itself, and has an empty status line', async () => {
+          const { element } = await setupBatch();
+          expect(run).not.toHaveBeenCalled();
+          const line = element.querySelector('.item-notice') as HTMLElement;
+          expect(line.getAttribute('role')).toBe('status');
+          expect(status(element)).toBe('');
+        });
+
+        it('is hidden, with its buttons, while the "Add item" form is open, and comes back with Done', async () => {
+          const { fixture, element } = await setupBatch();
+          await openForm(fixture, element);
+          expect(button(element, 'Add several photos')).toBeUndefined();
+          expect(button(element, 'Add item')).toBeUndefined();
+          expect(batchInput(element)).not.toBeNull(); // the field stays
+          button(element, 'Done')?.click();
+          fixture.detectChanges();
+          expect(Array.from(element.querySelectorAll('.items .actions button')).length).toBe(2);
+        });
+      });
+
+      describe('choosing photos', () => {
+        it('starts the batch for this container with the files, in the order they came', async () => {
+          const { fixture, element } = await setupBatch();
+          await pick(fixture, element, ['b.jpg', 'a.jpg', 'c.jpg']);
+          expect(run).toHaveBeenCalledTimes(1);
+          const [chosen, containerId] = run.mock.calls[0];
+          expect((chosen as File[]).map((f) => f.name)).toEqual(['b.jpg', 'a.jpg', 'c.jpg']);
+          expect(containerId).toBe(container.id);
+        });
+
+        it('shows "Preparing photo 1 of 3…" in the status line, and then follows the progress', async () => {
+          const { fixture, element } = await setupBatch();
+          const line = element.querySelector('.item-notice');
+          await pick(fixture, element, ['a.jpg', 'b.jpg', 'c.jpg']);
+          expect(status(element)).toBe('Preparing photo 1 of 3…');
+          options.onProgress(2, 3);
+          fixture.detectChanges();
+          expect(status(element)).toBe('Preparing photo 2 of 3…');
+          options.onProgress(3, 3);
+          fixture.detectChanges();
+          expect(status(element)).toBe('Preparing photo 3 of 3…');
+          // It is the same element all the time, so screen readers announce the changes.
+          expect(element.querySelector('.item-notice')).toBe(line);
+        });
+
+        it('keeps the focus on the button, and marks it as unavailable while the batch runs', async () => {
+          const { fixture, element } = await setupBatch();
+          batchButton(element).focus();
+          await pick(fixture, element, ['a.jpg']);
+          expect(batchButton(element).getAttribute('aria-disabled')).toBe('true');
+          expect(document.activeElement).toBe(batchButton(element));
+        });
+
+        it('puts the focus back on the button when the files are chosen, even if it was elsewhere', async () => {
+          const { fixture, element } = await setupBatch();
+          (element.querySelector('#container-name') as HTMLInputElement).focus();
+          await pick(fixture, element, ['a.jpg']);
+          expect(document.activeElement).toBe(batchButton(element));
+        });
+
+        it('empties the file field, so the same photos can be chosen again', async () => {
+          const { fixture, element } = await setupBatch();
+          await pick(fixture, element, ['a.jpg']);
+          expect(batchInput(element).value).toBe('');
+        });
+
+        it('starts nothing when no file is chosen', async () => {
+          const { fixture, element } = await setupBatch();
+          await pick(fixture, element, []);
+          expect(run).not.toHaveBeenCalled();
+          expect(batchButton(element).hasAttribute('aria-disabled')).toBe(false);
+          expect(status(element)).toBe('');
+        });
+
+        it('does not start another batch while one runs: the button only ignores the click', async () => {
+          const { fixture, element } = await setupBatch();
+          await pick(fixture, element, ['a.jpg', 'b.jpg']);
+          const click = vi.spyOn(batchInput(element), 'click').mockImplementation(() => undefined);
+          batchButton(element).click();
+          expect(click).not.toHaveBeenCalled();
+          // Even if the files arrive some other way, the running batch is not replaced.
+          await pick(fixture, element, ['c.jpg']);
+          expect(run).toHaveBeenCalledTimes(1);
+          expect(status(element)).toBe('Preparing photo 1 of 2…');
+        });
+
+        it('uses the first 20 photos when more are chosen, and says it at the end', async () => {
+          const { fixture, element } = await setupBatch();
+          const names = Array.from({ length: 25 }, (_, i) => `photo-${i + 1}.jpg`);
+          await pick(fixture, element, names);
+          const [chosen] = run.mock.calls[0];
+          expect((chosen as File[]).map((f) => f.name)).toEqual(names.slice(0, 20));
+          expect(status(element)).toBe('Preparing photo 1 of 20…');
+          await finishWith(fixture, ended(20, 20));
+          expect(status(element)).toBe(
+            'Added 20 photos. The other 5 were not added: the maximum is 20 photos at a time.',
+          );
+        });
+      });
+
+      describe('when the batch ends', () => {
+        it('says how many photos were added, and the button is available again', async () => {
+          const { fixture, element } = await setupBatch();
+          await pick(fixture, element, ['a.jpg', 'b.jpg', 'c.jpg']);
+          await finishWith(fixture, ended(3, 3));
+          expect(status(element)).toBe('Added 3 photos.');
+          expect(failures(element)).toEqual([]);
+          expect(batchButton(element).hasAttribute('aria-disabled')).toBe(false);
+        });
+
+        it('does not move the focus when it ends', async () => {
+          const { fixture, element } = await setupBatch();
+          await pick(fixture, element, ['a.jpg']);
+          expect(document.activeElement).toBe(batchButton(element));
+          await finishWith(fixture, ended(1, 1));
+          expect(status(element)).toBe('Added 1 photo.');
+          expect(document.activeElement).toBe(batchButton(element));
+        });
+
+        it('says which files failed and why, inside the same status line', async () => {
+          const { fixture, element } = await setupBatch();
+          await pick(fixture, element, ['a.jpg', 'b.pdf', 'c.jpg']);
+          await finishWith(
+            fixture,
+            ended(1, 3, [
+              { fileName: 'b.pdf', reason: 'This file is not an image.' },
+              { fileName: 'c.jpg', reason: "Couldn't save the photo." },
+            ]),
+          );
+          expect(status(element)).toBe('Added 1 of 3 photos. 2 failed.');
+          expect(failures(element)).toEqual([
+            'b.pdf: This file is not an image.',
+            "c.jpg: Couldn't save the photo.",
+          ]);
+          const line = element.querySelector('.item-notice') as HTMLElement;
+          expect(line.getAttribute('role')).toBe('status');
+          expect(line.querySelector('.batch-failures')).not.toBeNull();
+        });
+
+        it('says both the failures and the photos over the maximum', async () => {
+          const { fixture, element } = await setupBatch();
+          const names = Array.from({ length: 22 }, (_, i) => `photo-${i + 1}.jpg`);
+          await pick(fixture, element, names);
+          await finishWith(
+            fixture,
+            ended(19, 20, [{ fileName: 'photo-4.jpg', reason: 'This file is not an image.' }]),
+          );
+          expect(status(element)).toBe(
+            'Added 19 of 20 photos. 1 failed. The other 2 were not added: the maximum is 20 photos at a time.',
+          );
+          expect(failures(element)).toEqual(['photo-4.jpg: This file is not an image.']);
+        });
+
+        it('replaces the message that was there before the batch started', async () => {
+          const { fixture, element } = await setupBatch([item('Nails')]);
+          (element.querySelector('button[aria-label="Delete Nails"]') as HTMLButtonElement).click();
+          fixture.detectChanges();
+          button(element, 'Cancel')?.click();
+          await pick(fixture, element, ['a.jpg']);
+          expect(status(element)).toBe('Preparing photo 1 of 1…');
+        });
+
+        it('clears the summary, and the list of failures, when another action starts', async () => {
+          const { fixture, element } = await setupBatch();
+          await pick(fixture, element, ['a.pdf']);
+          await finishWith(
+            fixture,
+            ended(0, 1, [{ fileName: 'a.pdf', reason: 'This file is not an image.' }]),
+          );
+          expect(failures(element).length).toBe(1);
+          await openForm(fixture, element); // "Add item"
+          expect(status(element)).toBe('');
+          expect(failures(element)).toEqual([]);
+        });
+
+        it('clears the summary when another container is selected', async () => {
+          const { fixture, element } = await setupBatch();
+          await pick(fixture, element, ['a.jpg']);
+          await finishWith(fixture, ended(1, 1));
+          fixture.componentRef.setInput(
+            'container',
+            createContainer(TOUGH_BOX_27_GAL.id, 'Books', 2000, 0),
+          );
+          fixture.detectChanges();
+          expect(status(element)).toBe('');
+        });
+
+        it('lets another batch start', async () => {
+          const { fixture, element } = await setupBatch();
+          await pick(fixture, element, ['a.jpg']);
+          await finishWith(fixture, ended(1, 1));
+          await pick(fixture, element, ['b.jpg']);
+          expect(run).toHaveBeenCalledTimes(2);
+          expect(status(element)).toBe('Preparing photo 1 of 1…');
+        });
+      });
+
+      describe('while the batch runs', () => {
+        it('does not close an open form, and keeps what was typed', async () => {
+          const { fixture, element } = await setupBatch([item('Nails')]);
+          (element.querySelector('button[aria-label="Edit Nails"]') as HTMLButtonElement).click();
+          fixture.detectChanges();
+          await fixture.whenStable();
+          typeIn(element, 'item-name', 'Typed');
+          await pick(fixture, element, ['a.jpg']);
+          expect(element.querySelector('.item app-item-form')).not.toBeNull();
+          expect((element.querySelector('#item-name') as HTMLInputElement).value).toBe('Typed');
+          await finishWith(fixture, ended(1, 1));
+          expect((element.querySelector('#item-name') as HTMLInputElement).value).toBe('Typed');
+        });
+
+        it('lets the other actions work, and the progress has priority over their messages', async () => {
+          const { fixture, element } = await setupBatch([item('Nails')]);
+          await pick(fixture, element, ['a.jpg', 'b.jpg']);
+          (element.querySelector('button[aria-label="Edit Nails"]') as HTMLButtonElement).click();
+          fixture.detectChanges();
+          await fixture.whenStable();
+          expect(element.querySelector('.item app-item-form')).not.toBeNull();
+          expect(status(element)).toBe('Preparing photo 1 of 2…');
+        });
+      });
+
+      describe('when the user leaves the container', () => {
+        it('stops the batch when another container is selected, and shows nothing of it', async () => {
+          const { fixture, element } = await setupBatch();
+          await pick(fixture, element, ['a.jpg', 'b.jpg']);
+          expect(options.isCurrent()).toBe(true);
+
+          fixture.componentRef.setInput(
+            'container',
+            createContainer(TOUGH_BOX_27_GAL.id, 'Books', 2000, 0),
+          );
+          fixture.detectChanges();
+          expect(options.isCurrent()).toBe(false);
+          expect(status(element)).toBe('');
+          // The button of the new container works at once.
+          expect(batchButton(element).hasAttribute('aria-disabled')).toBe(false);
+
+          // The old batch ends later: nothing of it is shown in the new container.
+          await finishWith(fixture, ended(1, 2));
+          expect(status(element)).toBe('');
+        });
+
+        it('does not take the old batch back when the user comes back to the same container', async () => {
+          const { fixture, element } = await setupBatch();
+          await pick(fixture, element, ['a.jpg', 'b.jpg']);
+          fixture.componentRef.setInput(
+            'container',
+            createContainer(TOUGH_BOX_27_GAL.id, 'Books', 2000, 0),
+          );
+          fixture.detectChanges();
+          fixture.componentRef.setInput('container', container);
+          fixture.detectChanges();
+          expect(options.isCurrent()).toBe(false);
+          expect(status(element)).toBe('');
+          await finishWith(fixture, ended(1, 2));
+          expect(status(element)).toBe('');
+        });
+
+        it('stops the batch when the panel is destroyed (the container was deleted)', async () => {
+          const { fixture, element } = await setupBatch();
+          await pick(fixture, element, ['a.jpg']);
+          expect(options.isCurrent()).toBe(true);
+          fixture.destroy();
+          expect(options.isCurrent()).toBe(false);
+          // The batch ends after the panel is gone: nothing is shown and nothing breaks.
+          const text = element.querySelector('.item-notice')?.textContent;
+          finish(ended(1, 1));
+          await settle();
+          expect(element.querySelector('.item-notice')?.textContent).toBe(text);
+        });
+
+        it('can start a new batch in the other container while the old one winds down', async () => {
+          const { fixture, element } = await setupBatch();
+          await pick(fixture, element, ['a.jpg']);
+          const oldOptions = options;
+          fixture.componentRef.setInput(
+            'container',
+            createContainer(TOUGH_BOX_27_GAL.id, 'Books', 2000, 0),
+          );
+          fixture.detectChanges();
+          await pick(fixture, element, ['b.jpg']);
+          expect(run).toHaveBeenCalledTimes(2);
+          expect(oldOptions.isCurrent()).toBe(false);
+          expect(options.isCurrent()).toBe(true);
+          expect(status(element)).toBe('Preparing photo 1 of 1…');
+        });
       });
     });
 

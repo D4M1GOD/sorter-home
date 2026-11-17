@@ -2,6 +2,7 @@ import {
   afterNextRender,
   Component,
   computed,
+  DestroyRef,
   ElementRef,
   inject,
   Injector,
@@ -25,6 +26,14 @@ import {
   takeOut,
   unitsInside,
 } from '../core/item.model';
+import { ItemPhotoBatch } from '../core/item-photo-batch';
+import {
+  batchFailureText,
+  batchProgressText,
+  batchSummary,
+  limitBatchFiles,
+  PHOTO_BATCH_MAX,
+} from '../core/photo-batch';
 import { ItemForm } from '../item-form/item-form';
 import { ItemList, ItemRowControl, ItemUnitsRequested } from '../item-list/item-list';
 import { ItemUnitsMode, ItemUnitsSubmitted } from '../item-units-form/item-units-form';
@@ -80,7 +89,9 @@ function controlAfterUnits(mode: ItemUnitsMode, after: Item): ItemRowControl {
  * Details of the selected container: its type (read only), an editable name, the list of its
  * stack (when it has more than one container), Rotate 90°, a message area, its items (with the
  * "Add item" form, and the edit form, the delete confirmation and the take out, put back and
- * used forms of each item), and Delete with an inline confirmation. It does not save anything: it emits events and the page saves.
+ * used forms of each item), and Delete with an inline confirmation. It does not save anything:
+ * it emits events and the page saves. The exception is "Add several photos": the panel owns the
+ * batch (its button, progress and message) and `ItemPhotoBatch` creates the items in the store.
  */
 @Component({
   selector: 'app-container-panel',
@@ -213,9 +224,97 @@ export class ContainerPanel {
     computation: () => '',
   });
 
+  /**
+   * The batch of "Add several photos" that is running, or null when none is. It is an object only
+   * to tell one batch from another: it is reset when another container is selected, so a batch
+   * that was started in the container before is no longer the current one and stops.
+   */
+  private readonly batchRun = linkedSignal<string, object | null>({
+    source: this.containerId,
+    computation: () => null,
+  });
+  /** The hint under the buttons. The number is the limit of the batch, so the text follows it. */
+  protected readonly batchHint = `Up to ${PHOTO_BATCH_MAX} photos at a time.`;
+  /** True while a batch runs: the button is disabled and a second batch cannot start. */
+  protected readonly batchRunning = computed(() => this.batchRun() !== null);
+  /** "Preparing photo 3 of 9…" while a batch runs, and empty when none does. */
+  private readonly batchProgress = linkedSignal<string, string>({
+    source: this.containerId,
+    computation: () => '',
+  });
+  /**
+   * The text of the status line of the items section: the progress of a batch while it runs
+   * (it has priority), and the last message otherwise.
+   */
+  protected readonly statusText = computed(() => this.batchProgress() || this.itemNotice());
+  /**
+   * The files of the last batch that failed, with their reason. They are shown with the summary
+   * and disappear with it: the list is emptied whenever the message changes.
+   */
+  protected readonly batchFailures = linkedSignal<string, readonly string[]>({
+    source: this.itemNotice,
+    computation: () => [],
+  });
+
   private readonly addItemButton = viewChild<ElementRef<HTMLButtonElement>>('addItemButton');
+  private readonly batchButton = viewChild<ElementRef<HTMLButtonElement>>('batchButton');
+  private readonly batchInput = viewChild<ElementRef<HTMLInputElement>>('batchInput');
   private readonly itemList = viewChild(ItemList);
   private readonly injector = inject(Injector);
+  private readonly photoBatch = inject(ItemPhotoBatch);
+  /** True once the panel is destroyed (for example when its container is deleted). */
+  private destroyed = false;
+
+  constructor() {
+    inject(DestroyRef).onDestroy(() => (this.destroyed = true));
+  }
+
+  /** "Add several photos": opens the file picker with several files. A batch that runs blocks it. */
+  protected choosePhotos(): void {
+    if (!this.batchRunning()) {
+      this.batchInput()?.nativeElement.click();
+    }
+  }
+
+  /**
+   * Creates one item per chosen photo (the first 20 of them). The button keeps the focus, and the
+   * status line shows the progress and then the summary. It does not close or discard a form that
+   * is open. If the user selects another container or the container is deleted, the batch stops:
+   * the items already created stay and nothing is reported (see `ItemPhotoBatch`).
+   */
+  protected async onPhotosChosen(event: Event): Promise<void> {
+    const input = event.target as HTMLInputElement;
+    const chosen = Array.from(input.files ?? []);
+    // Empty the field, so choosing the same photos again fires "change" again.
+    input.value = '';
+    if (chosen.length === 0 || this.batchRunning()) {
+      return;
+    }
+    const { used, ignored } = limitBatchFiles(chosen);
+    const run = {};
+    const isCurrent = () => this.batchRun() === run && !this.destroyed;
+    this.batchRun.set(run);
+    this.itemNotice.set('');
+    this.batchProgress.set(batchProgressText(1, used.length));
+    this.focusAfterRender(() => this.batchButton()?.nativeElement.focus());
+
+    const result = await this.photoBatch.run(used, this.containerId(), {
+      isCurrent,
+      onProgress: (current, total) => {
+        if (isCurrent()) {
+          this.batchProgress.set(batchProgressText(current, total));
+        }
+      },
+    });
+
+    if (result.stopped || !isCurrent()) {
+      return;
+    }
+    this.batchRun.set(null);
+    this.batchProgress.set('');
+    this.itemNotice.set(batchSummary({ ...result, ignored }));
+    this.batchFailures.set(result.failures.map(batchFailureText));
+  }
 
   protected openItemForm(): void {
     this.itemAction.set({ kind: 'adding' });

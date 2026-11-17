@@ -203,10 +203,33 @@ export function createItem(draft: ItemDraft): Item {
 }
 
 /**
- * The items in the order the list shows them: by name, ignoring upper/lower case. Items with the
- * same name keep the order they were added in. Returns a new list: the stored order (the order
- * they were added in) does not change.
+ * Compares names the way the list shows them: ignoring upper/lower case and accents, and
+ * comparing the numbers inside a name by their value ("natural" order), so `Item 2` comes before
+ * `Item 10`. One collator for every comparison: creating it is slower than using it.
+ */
+const NAME_COLLATOR = new Intl.Collator('en', { sensitivity: 'base', numeric: true });
+
+/**
+ * The items in the order the list shows them: by name, ignoring upper/lower case, with the
+ * numbers inside the names compared by value (`Item 2` before `Item 10`, `Nails 2` before
+ * `Nails 10`). Items with the same name keep the order they were added in. Returns a new list:
+ * the stored order (the order they were added in) does not change.
  */
 export function sortItemsByName(items: readonly Item[]): Item[] {
-  return [...items].sort((a, b) => a.name.localeCompare(b.name, 'en', { sensitivity: 'base' }));
+  return [...items].sort((a, b) => NAME_COLLATOR.compare(a.name, b.name));
+}
+
+/**
+ * Automatic name for an item created from a photo: "Item N", where N is the lowest positive
+ * number that no item in the list uses yet. Names are compared ignoring upper/lower case (so a
+ * renamed "item 1" still counts as used), because the list ignores it too. Pass the items of
+ * one container: the names of other containers do not count.
+ */
+export function nextItemName(items: readonly Pick<Item, 'name'>[]): string {
+  const used = new Set(items.map((item) => item.name.toLowerCase()));
+  let n = 1;
+  while (used.has(`item ${n}`)) {
+    n++;
+  }
+  return `Item ${n}`;
 }

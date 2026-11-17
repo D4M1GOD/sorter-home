@@ -54,6 +54,26 @@ describe('ItemList', () => {
     expect(names).toEqual(['Batteries', 'cables', 'nails', 'Zip ties']);
   });
 
+  it('orders the numbers inside the names by value: "Item 2" before "Item 10"', async () => {
+    const { element } = await setup([
+      item('Item 10'),
+      item('Nails 10'),
+      item('Item 2'),
+      item('Nails 2'),
+      item('item 1'),
+      item('Hammer'),
+    ]);
+    const names = rows(element).map((row) => row.querySelector('.item-name')?.textContent?.trim());
+    expect(names).toEqual(['Hammer', 'item 1', 'Item 2', 'Item 10', 'Nails 2', 'Nails 10']);
+  });
+
+  it('keeps that order when there are more than ten items', async () => {
+    const stored = Array.from({ length: 12 }, (_, index) => item(`Item ${index + 1}`)).reverse();
+    const { element } = await setup(stored);
+    const names = rows(element).map((row) => row.querySelector('.item-name')?.textContent?.trim());
+    expect(names).toEqual(Array.from({ length: 12 }, (_, index) => `Item ${index + 1}`));
+  });
+
   it('shows the quantity as "Qty N"', async () => {
     const { element } = await setup([item('Nails', { quantity: 100 })]);
     expect(element.querySelector('.item-quantity')?.textContent?.trim()).toBe('Qty 100');

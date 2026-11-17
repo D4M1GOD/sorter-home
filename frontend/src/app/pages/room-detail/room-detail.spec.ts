@@ -6,7 +6,7 @@ import { RoomStore } from '../../core/room-store';
 import { createContainer, TOUGH_BOX_27_GAL } from '../../core/container.model';
 import { vi } from 'vitest';
 import { createItem } from '../../core/item.model';
-import { PhotoProcessor } from '../../core/photo-processor';
+import { PhotoError, PhotoProcessor } from '../../core/photo-processor';
 import { PhotoStore } from '../../core/photo-store';
 import {
   fakePhoto,
@@ -913,6 +913,140 @@ describe('RoomDetail', () => {
       expect(store.categories()).toEqual([]);
     });
 
+    describe('adding several photos', () => {
+      let photos: FakePhotoStore;
+      let urls: ObjectUrls;
+
+      beforeEach(() => {
+        photos = new FakePhotoStore();
+        urls = stubObjectUrls();
+        TestBed.configureTestingModule({
+          providers: [
+            { provide: PhotoStore, useValue: photos },
+            {
+              provide: PhotoProcessor,
+              useValue: {
+                process: async (file: File) => {
+                  if (!file.type.startsWith('image/')) {
+                    throw new PhotoError('This file is not an image.');
+                  }
+                  return fakePhoto(file.name);
+                },
+              },
+            },
+          ],
+        });
+      });
+
+      afterEach(() => {
+        urls.restore();
+      });
+
+      const image = (name: string) => new File(['pixels'], name, { type: 'image/jpeg' });
+
+      async function pickPhotos(
+        fixture: ComponentFixture<unknown>,
+        element: HTMLElement,
+        files: File[],
+      ) {
+        const input = element.querySelector('app-container-panel input[multiple]') as HTMLInputElement;
+        Object.defineProperty(input, 'files', { value: files, configurable: true });
+        input.dispatchEvent(new Event('change'));
+        await settle();
+        fixture.detectChanges();
+        await fixture.whenStable();
+        await settle();
+        fixture.detectChanges();
+      }
+
+      function listedNames(element: HTMLElement): (string | undefined)[] {
+        return Array.from(element.querySelectorAll('.item-name')).map((n) => n.textContent?.trim());
+      }
+
+      function statusText(element: HTMLElement): string {
+        const line = element.querySelector('.item-notice') as HTMLElement;
+        return Array.from(line.childNodes)
+          .filter((node) => node.nodeType === Node.TEXT_NODE)
+          .map((node) => node.textContent)
+          .join('')
+          .trim();
+      }
+
+      it('creates one item per photo, with its photo, and shows them in natural order', async () => {
+        const { store, room, toys, fixture, element } = await openWithContainers();
+        const files = Array.from({ length: 12 }, (_, i) => image(`photo-${i + 1}.jpg`));
+        await pickPhotos(fixture, element, files);
+
+        const items = itemsOf(store, room.id, toys.id);
+        expect(items.map((item) => item.name)).toEqual(
+          Array.from({ length: 12 }, (_, i) => `Item ${i + 1}`),
+        );
+        expect(items.map((item) => item.photoId)).toEqual(
+          Array.from({ length: 12 }, (_, i) => `photo-${i + 1}`),
+        );
+        expect(items.every((item) => item.quantity === 1 && item.quantityOut === 0)).toBe(true);
+        expect(items.every((item) => item.description === '' && item.category === '')).toBe(true);
+        // "Item 2" comes before "Item 10" in the list, not after "Item 1".
+        expect(listedNames(element)).toEqual(Array.from({ length: 12 }, (_, i) => `Item ${i + 1}`));
+        expect(element.querySelector('.items h3')?.textContent?.trim()).toBe('Items (12)');
+        expect(statusText(element)).toBe('Added 12 photos.');
+        // Saved in the browser storage too.
+        expect(itemsOf(new RoomStore(), room.id, toys.id)).toEqual(items);
+      });
+
+      it('shows the thumbnail of each new item, and no "Add photo" button for it', async () => {
+        const { fixture, element } = await openWithContainers();
+        await pickPhotos(fixture, element, [image('a.jpg'), image('b.jpg')]);
+        expect(element.querySelector('button[aria-label="View photo of Item 1"]')).not.toBeNull();
+        expect(element.querySelector('button[aria-label="View photo of Item 2"]')).not.toBeNull();
+        expect(element.querySelector('button[aria-label="Add photo to Item 1"]')).toBeNull();
+      });
+
+      it('goes on after the items that already exist, in the order of the list', async () => {
+        const { store, room, toys, fixture, element } = await openWithContainers();
+        for (const name of ['Nails', 'Hammer', 'Item 1']) {
+          store.addItem(
+            room.id,
+            toys.id,
+            createItem({ name, quantity: 1, description: '', category: '', photoId: null }),
+          );
+        }
+        fixture.detectChanges();
+        await pickPhotos(fixture, element, [image('a.jpg'), image('b.jpg')]);
+        expect(listedNames(element)).toEqual(['Hammer', 'Item 1', 'Item 2', 'Item 3', 'Nails']);
+      });
+
+      it('creates the other items and names the file that failed, with the reason', async () => {
+        const { store, room, toys, fixture, element } = await openWithContainers();
+        const pdf = new File(['x'], 'scan.pdf', { type: 'application/pdf' });
+        await pickPhotos(fixture, element, [image('a.jpg'), pdf, image('c.jpg')]);
+        expect(itemsOf(store, room.id, toys.id).map((item) => item.name)).toEqual(['Item 1', 'Item 2']);
+        expect(photos.saved.size).toBe(2);
+        expect(statusText(element)).toBe('Added 2 of 3 photos. 1 failed.');
+        const failed = Array.from(element.querySelectorAll('.item-notice .batch-failures li')).map(
+          (li) => li.textContent?.trim(),
+        );
+        expect(failed).toEqual(['scan.pdf: This file is not an image.']);
+      });
+
+      it('uses only the first 20 photos, and says so', async () => {
+        const { store, room, toys, fixture, element } = await openWithContainers();
+        const files = Array.from({ length: 23 }, (_, i) => image(`photo-${i + 1}.jpg`));
+        await pickPhotos(fixture, element, files);
+        expect(itemsOf(store, room.id, toys.id).length).toBe(20);
+        expect(photos.saved.size).toBe(20);
+        expect(statusText(element)).toBe(
+          'Added 20 photos. The other 3 were not added: the maximum is 20 photos at a time.',
+        );
+      });
+
+      it('leaves the other containers alone', async () => {
+        const { store, room, books, fixture, element } = await openWithContainers();
+        await pickPhotos(fixture, element, [image('a.jpg')]);
+        expect(itemsOf(store, room.id, books.id)).toEqual([]);
+      });
+    });
+
     describe('editing and removing', () => {
       function iconButton(element: HTMLElement, label: string): HTMLButtonElement {
         return element.querySelector(
@@ -1249,7 +1383,8 @@ describe('RoomDetail', () => {
         });
 
         async function choosePhoto(fixture: ComponentFixture<unknown>, element: HTMLElement) {
-          const input = element.querySelector('input[type="file"]') as HTMLInputElement;
+          // The file field of the photo field of the item form, not the one of "Add several photos".
+          const input = element.querySelector('app-item-form input[type="file"]') as HTMLInputElement;
           const file = new File(['pixels'], 'photo.jpg', { type: 'image/jpeg' });
           Object.defineProperty(input, 'files', { value: [file], configurable: true });
           input.dispatchEvent(new Event('change'));

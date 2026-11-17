@@ -27,7 +27,8 @@ export interface ItemUnitsRequested {
 }
 
 /**
- * The items of the selected container, in alphabetical order. Each row shows the name, the
+ * The items of the selected container, in natural-number order by name, ignoring upper/lower
+ * case (`Item 2` comes before `Item 10`; see `sortItemsByName`). Each row shows the name, the
  * quantity ("Qty 3", or "None left" when it is 0), the category and the full description, with
  * the thumbnail of its photo on the left; a row without a photo has an "Add photo" button. When
  * units are out of the container the row says how many ("20 of 100 out") and has the "Put back"
