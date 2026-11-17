@@ -22,6 +22,11 @@ export interface Item {
   description: string;
   /** A single category. Empty when the item has no category. */
   category: string;
+  /**
+   * The id of the photo of the item in the photo store (see `PhotoStore`), or null when it has
+   * no photo. The photo itself is not kept here: only this reference.
+   */
+  photoId: string | null;
 }
 
 /**
@@ -77,13 +82,19 @@ export function isValidItemCategory(category: string): boolean {
   return cleanCategory(category).length <= ITEM_CATEGORY_MAX_LENGTH;
 }
 
+/** A photo id is valid when it is null (no photo) or a text that is not empty. */
+export function isValidPhotoId(photoId: unknown): photoId is string | null {
+  return photoId === null || (typeof photoId === 'string' && photoId.length > 0);
+}
+
 /** True when every field of the draft is valid. */
 export function isValidItemDraft(draft: ItemDraft): boolean {
   return (
     isValidItemName(draft.name) &&
     isValidItemQuantity(draft.quantity) &&
     isValidItemDescription(draft.description) &&
-    isValidItemCategory(draft.category)
+    isValidItemCategory(draft.category) &&
+    isValidPhotoId(draft.photoId)
   );
 }
 
@@ -187,6 +198,7 @@ export function createItem(draft: ItemDraft): Item {
     quantityOut: 0,
     description: draft.description.trim(),
     category: cleanCategory(draft.category),
+    photoId: draft.photoId,
   };
 }
 

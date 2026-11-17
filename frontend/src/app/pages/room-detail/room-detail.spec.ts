@@ -4,7 +4,17 @@ import { provideRouter } from '@angular/router';
 import { RouterTestingHarness } from '@angular/router/testing';
 import { RoomStore } from '../../core/room-store';
 import { createContainer, TOUGH_BOX_27_GAL } from '../../core/container.model';
+import { vi } from 'vitest';
 import { createItem } from '../../core/item.model';
+import { PhotoProcessor } from '../../core/photo-processor';
+import { PhotoStore } from '../../core/photo-store';
+import {
+  fakePhoto,
+  FakePhotoStore,
+  ObjectUrls,
+  settle,
+  stubObjectUrls,
+} from '../../core/photo-store.testing';
 import { createRoom } from '../../core/room.model';
 import { RoomPlan } from '../../room-plan/room-plan';
 import { routes } from '../../app.routes';
@@ -787,6 +797,7 @@ describe('RoomDetail', () => {
           quantityOut: 0,
           description: 'Box of 100',
           category: 'Hardware',
+          photoId: null,
         },
       ]);
       expect(itemsOf(store, room.id, books.id)).toEqual([]);
@@ -838,7 +849,13 @@ describe('RoomDetail', () => {
       store.addItem(
         attic.id,
         box.id,
-        createItem({ name: 'Hose', quantity: 1, description: '', category: 'Jardín' }),
+        createItem({
+          name: 'Hose',
+          quantity: 1,
+          description: '',
+          category: 'Jardín',
+          photoId: null,
+        }),
       );
 
       panelButton(element, 'Add item')?.click();
@@ -944,6 +961,7 @@ describe('RoomDetail', () => {
           quantityOut: 0,
           description: 'Black\n8 in',
           category: 'Hardware', // the spelling of the other item is reused
+          photoId: null,
         };
         // Same id and same place in the stored order (the order the items were added in).
         expect(itemsOf(store, room.id, toys.id)).toEqual([before[0], edited, before[2]]);
@@ -1204,6 +1222,154 @@ describe('RoomDetail', () => {
           await fixture.whenStable();
           element
             .querySelector('#item-units')
+            ?.dispatchEvent(new KeyboardEvent('keydown', { key: 'r', bubbles: true }));
+          await fixture.whenStable();
+          expect(store.getById(room.id)?.containers.find((c) => c.id === toys.id)?.rotation).toBe(0);
+        });
+      });
+
+      describe('photos', () => {
+        let photos: FakePhotoStore;
+        let urls: ObjectUrls;
+
+        beforeEach(() => {
+          photos = new FakePhotoStore();
+          urls = stubObjectUrls();
+          TestBed.configureTestingModule({
+            providers: [
+              { provide: PhotoStore, useValue: photos },
+              { provide: PhotoProcessor, useValue: { process: async () => fakePhoto('chosen') } },
+            ],
+          });
+        });
+
+        afterEach(() => {
+          urls.restore();
+          vi.restoreAllMocks();
+        });
+
+        async function choosePhoto(fixture: ComponentFixture<unknown>, element: HTMLElement) {
+          const input = element.querySelector('input[type="file"]') as HTMLInputElement;
+          const file = new File(['pixels'], 'photo.jpg', { type: 'image/jpeg' });
+          Object.defineProperty(input, 'files', { value: [file], configurable: true });
+          input.dispatchEvent(new Event('change'));
+          await settle();
+          await fixture.whenStable();
+        }
+
+        async function submit(fixture: ComponentFixture<unknown>, element: HTMLElement) {
+          element.querySelector('app-item-form form')?.dispatchEvent(new Event('submit'));
+          await settle();
+          await fixture.whenStable();
+          await settle();
+          await fixture.whenStable();
+        }
+
+        /** Adds "Hammer" with a photo to "Toys", through the "Add item" form. */
+        async function addWithPhoto(fixture: ComponentFixture<unknown>, element: HTMLElement) {
+          panelButton(element, 'Add item')?.click();
+          await fixture.whenStable();
+          typeIn(element, 'item-name', 'Hammer');
+          await choosePhoto(fixture, element);
+          await submit(fixture, element);
+        }
+
+        it('adds an item with its photo: the photo is saved and the item keeps its id', async () => {
+          const { store, room, toys, fixture, element } = await openWithContainers();
+          await addWithPhoto(fixture, element);
+          const saved = itemsOf(store, room.id, toys.id);
+          expect(saved.map((i) => [i.name, i.photoId])).toEqual([['Hammer', 'photo-1']]);
+          expect(photos.saved.has('photo-1')).toBe(true);
+          expect(photos.deleted).toEqual([]);
+          // Saved in the browser storage too: a new store finds the reference.
+          expect(itemsOf(new RoomStore(), room.id, toys.id)[0].photoId).toBe('photo-1');
+          // The row shows the thumbnail and no "Add photo" button.
+          expect(iconButton(element, 'View photo of Hammer')).not.toBeNull();
+          expect(iconButton(element, 'Add photo to Hammer')).toBeNull();
+        });
+
+        it('adds no item and keeps the form when the photo cannot be saved', async () => {
+          photos.failSave = true;
+          const { store, room, toys, fixture, element } = await openWithContainers();
+          await addWithPhoto(fixture, element);
+          expect(itemsOf(store, room.id, toys.id)).toEqual([]);
+          expect(element.querySelector('app-item-form .field-error')?.textContent?.trim()).toBe(
+            "Couldn't save the photo.",
+          );
+          expect((element.querySelector('#item-name') as HTMLInputElement).value).toBe('Hammer');
+        });
+
+        it('deletes the photo when the store does not save the new item', async () => {
+          const { store, room, toys, fixture, element } = await openWithContainers();
+          vi.spyOn(store, 'addItem').mockReturnValue(false);
+          await addWithPhoto(fixture, element);
+          expect(itemsOf(store, room.id, toys.id)).toEqual([]);
+          expect(photos.deleted).toEqual(['photo-1']);
+          expect(photos.saved.size).toBe(0);
+        });
+
+        it('adds a photo to an item from "Add photo" of its row', async () => {
+          const { store, room, toys, fixture, element } = await openWithItems();
+          iconButton(element, 'Add photo to Cables').click();
+          await fixture.whenStable();
+          await choosePhoto(fixture, element);
+          await submit(fixture, element);
+          const cables = itemsOf(store, room.id, toys.id)[1];
+          expect([cables.name, cables.photoId]).toEqual(['Cables', 'photo-1']);
+          expect(element.querySelector('.item-notice')?.textContent?.trim()).toBe('Saved Cables');
+        });
+
+        it('deletes the new photo, and keeps the old one, when the store does not save the edit', async () => {
+          const { store, room, toys, fixture, element } = await openWithContainers();
+          await addWithPhoto(fixture, element); // "Hammer" with photo-1
+          panelButton(element, 'Done')?.click();
+          await fixture.whenStable();
+
+          vi.spyOn(store, 'updateItem').mockReturnValue(false);
+          iconButton(element, 'Edit Hammer').click();
+          await fixture.whenStable();
+          await settle();
+          await choosePhoto(fixture, element); // replaced: it will be photo-2
+          await submit(fixture, element);
+          expect(photos.deleted).toEqual(['photo-2']);
+          expect(photos.saved.has('photo-1')).toBe(true);
+          expect(itemsOf(store, room.id, toys.id)[0].photoId).toBe('photo-1');
+        });
+
+        it('does not delete the photo of the item when an edit that keeps it is not saved', async () => {
+          const { store, fixture, element } = await openWithContainers();
+          await addWithPhoto(fixture, element);
+          panelButton(element, 'Done')?.click();
+          await fixture.whenStable();
+
+          vi.spyOn(store, 'updateItem').mockReturnValue(false);
+          iconButton(element, 'Edit Hammer').click();
+          await fixture.whenStable();
+          await settle();
+          typeIn(element, 'item-name', 'Claw hammer');
+          await submit(fixture, element);
+          expect(photos.deleted).toEqual([]);
+          expect(photos.saved.has('photo-1')).toBe(true);
+        });
+
+        it('opens the full photo from the thumbnail', async () => {
+          const { fixture, element } = await openWithContainers();
+          await addWithPhoto(fixture, element);
+          iconButton(element, 'View photo of Hammer').click();
+          await fixture.whenStable();
+          await settle();
+          await fixture.whenStable();
+          const viewer = element.querySelector('app-photo-viewer') as HTMLElement;
+          expect(viewer.querySelector('img')?.getAttribute('alt')).toBe('Photo of Hammer');
+        });
+
+        it('does not rotate the container with the R key on the buttons of the photo field', async () => {
+          // Buttons are not typing targets: this is the existing rule, the photo field follows it.
+          const { store, room, toys, fixture, element } = await openWithContainers();
+          panelButton(element, 'Add item')?.click();
+          await fixture.whenStable();
+          element
+            .querySelector('#item-name')
             ?.dispatchEvent(new KeyboardEvent('keydown', { key: 'r', bubbles: true }));
           await fixture.whenStable();
           expect(store.getById(room.id)?.containers.find((c) => c.id === toys.id)?.rotation).toBe(0);

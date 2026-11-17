@@ -1,3 +1,4 @@
+import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { vi } from 'vitest';
 import { createContainer, TOUGH_BOX_27_GAL } from '../core/container.model';
@@ -8,7 +9,17 @@ import {
   putBack,
   takeOut,
 } from '../core/item.model';
-import { ContainerPanel, ItemUnitsChanged } from './container-panel';
+import { PhotoProcessor } from '../core/photo-processor';
+import { PhotoStore } from '../core/photo-store';
+import {
+  fakePhoto,
+  FakePhotoStore,
+  ObjectUrls,
+  settle,
+  stubObjectUrls,
+} from '../core/photo-store.testing';
+import { TouchScreen } from '../core/touch-screen';
+import { ContainerPanel, ItemEdited, ItemUnitsChanged } from './container-panel';
 
 describe('ContainerPanel', () => {
   const container = createContainer(TOUGH_BOX_27_GAL.id, 'Toys', 0, 0);
@@ -64,6 +75,7 @@ describe('ContainerPanel', () => {
       quantityOut: 1,
       description: '',
       category: '',
+      photoId: null,
     };
     fixture.componentRef.setInput('container', { ...container, items: [hammer] });
     fixture.detectChanges();
@@ -72,6 +84,7 @@ describe('ContainerPanel', () => {
       'Add item',
       'Put back Hammer',
       'Used Hammer',
+      'Add photo to Hammer',
       'Take out Hammer',
       'Edit Hammer',
       'Delete Hammer',
@@ -264,6 +277,7 @@ describe('ContainerPanel', () => {
         quantityOut: 0,
         description: '',
         category: '',
+        photoId: null,
         ...values,
       };
     }
@@ -305,7 +319,7 @@ describe('ContainerPanel', () => {
         item('Cables', { quantity: 0 }),
       ]);
       expect(element.querySelector('.items h3')?.textContent?.trim()).toBe('Items (2)');
-      const rows = Array.from(element.querySelectorAll('.item')).map((row) =>
+      const rows = Array.from(element.querySelectorAll('.item .item-text')).map((row) =>
         row.textContent?.replace(/\s+/g, ' ').trim(),
       );
       expect(rows).toEqual(['Cables None left', 'Nails Qty 100']);
@@ -347,6 +361,7 @@ describe('ContainerPanel', () => {
         quantity: 100,
         description: '',
         category: '',
+        photoId: null,
       });
       expect(element.querySelector('app-item-form')).not.toBeNull();
       expect(element.querySelector('.items h3')?.textContent?.trim()).toBe('Items (0)');
@@ -492,7 +507,13 @@ describe('ContainerPanel', () => {
           expect(itemEdited).toHaveBeenCalledTimes(1);
           expect(itemEdited).toHaveBeenCalledWith({
             itemId: nails.id,
-            draft: { name: 'Screws', quantity: 85, description: '', category: 'Hardware' },
+            draft: {
+              name: 'Screws',
+              quantity: 85,
+              description: '',
+              category: 'Hardware',
+              photoId: null,
+            },
           });
           expect(itemAdded).not.toHaveBeenCalled();
           expect(element.querySelector('app-item-form')).toBeNull();
@@ -1091,6 +1112,279 @@ describe('ContainerPanel', () => {
           expect(element.querySelector('.item .confirm span')?.textContent?.trim()).toBe(
             'Delete "Screws"? 20 of 100 are out of the container. This cannot be undone.',
           );
+        });
+      });
+
+      describe('photos', () => {
+        const withPhoto = item('Hammer', { photoId: 'p-hammer' });
+        let photos: FakePhotoStore;
+        let urls: ObjectUrls;
+
+        beforeEach(() => {
+          photos = new FakePhotoStore();
+          photos.add('p-hammer');
+          urls = stubObjectUrls();
+          TestBed.configureTestingModule({
+            providers: [
+              { provide: PhotoStore, useValue: photos },
+              { provide: PhotoProcessor, useValue: { process: async () => fakePhoto('chosen') } },
+            ],
+          });
+        });
+
+        afterEach(() => {
+          urls.restore();
+        });
+
+        /** A panel with "Hammer" (with a photo) and "Nails" (without), and its photos loaded. */
+        async function setupPhotos() {
+          const result = await setupAttached([nails, withPhoto]);
+          await settle();
+          result.fixture.detectChanges();
+          return result;
+        }
+
+        async function choosePhoto(fixture: ComponentFixture<unknown>, element: HTMLElement) {
+          const input = element.querySelector('input[type="file"]') as HTMLInputElement;
+          const file = new File(['pixels'], 'nails.jpg', { type: 'image/jpeg' });
+          Object.defineProperty(input, 'files', { value: [file], configurable: true });
+          input.dispatchEvent(new Event('change'));
+          await settle();
+          fixture.detectChanges();
+          await fixture.whenStable();
+        }
+
+        describe('"Add photo" of a row', () => {
+          it('opens the edit form of that item, with the focus on its photo field', async () => {
+            const { fixture, element } = await setupPhotos();
+            await click(fixture, iconButton(element, 'Add photo to Nails'));
+            const form = element.querySelector('.item app-item-form') as HTMLElement;
+            expect(form.querySelector('h4')?.textContent?.trim()).toBe('Edit item');
+            expect((element.querySelector('#item-name') as HTMLInputElement).value).toBe('Nails');
+            expect(document.activeElement).toBe(form.querySelector('.photo-add'));
+          });
+
+          it('does not open the file picker by itself, and saves nothing', async () => {
+            const { fixture, element, itemEdited } = await setupPhotos();
+            const picker = vi.spyOn(HTMLInputElement.prototype, 'click');
+            try {
+              await click(fixture, iconButton(element, 'Add photo to Nails'));
+              expect(picker).not.toHaveBeenCalled();
+            } finally {
+              picker.mockRestore();
+            }
+            expect(itemEdited).not.toHaveBeenCalled();
+            expect(photos.saved.size).toBe(1);
+          });
+
+          it('gives the focus back to "Add photo" of the row with Cancel or Escape', async () => {
+            const { fixture, element } = await setupPhotos();
+            await click(fixture, iconButton(element, 'Add photo to Nails'));
+            await click(fixture, button(element, 'Cancel'));
+            expect(element.querySelector('app-item-form')).toBeNull();
+            expect(document.activeElement).toBe(iconButton(element, 'Add photo to Nails'));
+
+            await click(fixture, iconButton(element, 'Add photo to Nails'));
+            element
+              .querySelector('#item-name')
+              ?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+            fixture.detectChanges();
+            await fixture.whenStable();
+            expect(document.activeElement).toBe(iconButton(element, 'Add photo to Nails'));
+          });
+
+          it('still gives the focus back to "Edit" when the form was opened with "Edit"', async () => {
+            const { fixture, element } = await setupPhotos();
+            await click(fixture, iconButton(element, 'Edit Nails'));
+            expect(document.activeElement).toBe(element.querySelector('#item-name'));
+            await click(fixture, button(element, 'Cancel'));
+            expect(document.activeElement).toBe(iconButton(element, 'Edit Nails'));
+          });
+
+          it('emits "itemEdited" with the id of the saved photo, and the focus goes to "Edit"', async () => {
+            const { fixture, element, itemEdited } = await setupPhotos();
+            itemEdited.mockImplementation(({ itemId, draft }: ItemEdited) => {
+              fixture.componentRef.setInput('container', {
+                ...container,
+                items: [nails, withPhoto].map((i) => (i.id === itemId ? { ...i, ...draft } : i)),
+              });
+            });
+            await click(fixture, iconButton(element, 'Add photo to Nails'));
+            await choosePhoto(fixture, element);
+            element.querySelector('app-item-form form')?.dispatchEvent(new Event('submit'));
+            await settle();
+            fixture.detectChanges();
+            await fixture.whenStable();
+            await settle();
+            fixture.detectChanges();
+
+            expect(itemEdited).toHaveBeenCalledTimes(1);
+            expect(itemEdited.mock.calls[0][0]).toEqual({
+              itemId: nails.id,
+              draft: {
+                name: 'Nails',
+                quantity: 100,
+                description: '',
+                category: 'Hardware',
+                photoId: 'photo-1',
+              },
+            });
+            expect(itemNotice(element)).toBe('Saved Nails');
+            // The row has a photo now: "Add photo" is gone and the thumbnail is there.
+            expect(iconButton(element, 'Add photo to Nails')).toBeNull();
+            expect(iconButton(element, 'View photo of Nails')).not.toBeNull();
+            expect(document.activeElement).toBe(iconButton(element, 'Edit Nails'));
+          });
+
+          it('keeps the form open, and emits nothing, when the photo cannot be saved', async () => {
+            photos.failSave = true;
+            const { fixture, element, itemEdited } = await setupPhotos();
+            await click(fixture, iconButton(element, 'Add photo to Nails'));
+            await choosePhoto(fixture, element);
+            element.querySelector('app-item-form form')?.dispatchEvent(new Event('submit'));
+            await settle();
+            fixture.detectChanges();
+            expect(itemEdited).not.toHaveBeenCalled();
+            expect(element.querySelector('app-item-form .field-error')?.textContent?.trim()).toBe(
+              "Couldn't save the photo.",
+            );
+            expect(itemNotice(element)).toBe('');
+          });
+
+          it('follows "one thing at a time": it closes what was open, and is closed by the next', async () => {
+            const { fixture, element } = await setupPhotos();
+            await click(fixture, iconButton(element, 'Delete Hammer'));
+            await click(fixture, iconButton(element, 'Add photo to Nails'));
+            expect(element.querySelector('.item .confirm')).toBeNull();
+            expect(element.querySelectorAll('app-item-form').length).toBe(1);
+
+            await click(fixture, iconButton(element, 'Take out Hammer'));
+            expect(element.querySelector('app-item-form')).toBeNull();
+            expect(element.querySelectorAll('app-item-units-form').length).toBe(1);
+          });
+        });
+
+        describe('"Add photo" of a row on a touch screen', () => {
+          beforeEach(() => {
+            TestBed.configureTestingModule({
+              providers: [{ provide: TouchScreen, useValue: { coarse: signal(true) } }],
+            });
+          });
+
+          function fieldButtons(element: HTMLElement): (string | undefined)[] {
+            return Array.from(element.querySelectorAll('app-item-form [role="group"] button')).map(
+              (b) => b.textContent?.trim(),
+            );
+          }
+
+          it('opens the form with "Take photo" next to "Add photo", and the focus on "Add photo"', async () => {
+            const { fixture, element } = await setupPhotos();
+            await click(fixture, iconButton(element, 'Add photo to Nails'));
+            expect(fieldButtons(element)).toEqual(['Add photo', 'Take photo']);
+            expect(document.activeElement).toBe(element.querySelector('app-item-form .photo-add'));
+          });
+
+          it('still gives the focus back to "Add photo" of the row with Cancel', async () => {
+            const { fixture, element } = await setupPhotos();
+            await click(fixture, iconButton(element, 'Add photo to Nails'));
+            await click(fixture, button(element, 'Cancel'));
+            expect(document.activeElement).toBe(iconButton(element, 'Add photo to Nails'));
+          });
+
+          it('shows "Replace", "Take photo" and "Remove" in the form of an item with a photo', async () => {
+            const { fixture, element } = await setupPhotos();
+            await click(fixture, iconButton(element, 'Edit Hammer'));
+            await settle();
+            fixture.detectChanges();
+            expect(fieldButtons(element)).toEqual(['Replace', 'Take photo', 'Remove']);
+          });
+        });
+
+        describe('the photo window', () => {
+          it('is not in the page until a thumbnail is pressed', async () => {
+            const { element } = await setupPhotos();
+            expect(element.querySelector('app-photo-viewer')).toBeNull();
+          });
+
+          it('opens with the full photo and the name of the item', async () => {
+            const load = vi.spyOn(photos, 'load');
+            const { fixture, element } = await setupPhotos();
+            await click(fixture, iconButton(element, 'View photo of Hammer'));
+            await settle();
+            fixture.detectChanges();
+            const viewer = element.querySelector('app-photo-viewer') as HTMLElement;
+            expect(viewer.querySelector('h2')?.textContent?.trim()).toBe('Hammer');
+            expect(viewer.querySelector('img')?.getAttribute('alt')).toBe('Photo of Hammer');
+            expect(load).toHaveBeenCalledWith('p-hammer', 'full');
+            expect(document.activeElement?.textContent?.trim()).toBe('Close');
+          });
+
+          it('closes with "Close" and gives the focus back to the thumbnail', async () => {
+            const { fixture, element } = await setupPhotos();
+            await click(fixture, iconButton(element, 'View photo of Hammer'));
+            const close = element.querySelector('app-photo-viewer button') as HTMLButtonElement;
+            close.click();
+            await settle();
+            fixture.detectChanges();
+            await fixture.whenStable();
+            expect(element.querySelector('app-photo-viewer')).toBeNull();
+            expect(document.activeElement).toBe(iconButton(element, 'View photo of Hammer'));
+          });
+
+          it('closes when the browser closes the dialog (the Escape key), with the same focus', async () => {
+            const { fixture, element } = await setupPhotos();
+            await click(fixture, iconButton(element, 'View photo of Hammer'));
+            element.querySelector('app-photo-viewer dialog')?.dispatchEvent(new Event('close'));
+            fixture.detectChanges();
+            await fixture.whenStable();
+            expect(element.querySelector('app-photo-viewer')).toBeNull();
+            expect(document.activeElement).toBe(iconButton(element, 'View photo of Hammer'));
+          });
+
+          it('revokes the address of the full photo when it closes', async () => {
+            const { fixture, element } = await setupPhotos();
+            const before = urls.alive().length; // the thumbnail of the row
+            await click(fixture, iconButton(element, 'View photo of Hammer'));
+            await settle();
+            fixture.detectChanges();
+            expect(urls.alive().length).toBe(before + 1);
+            element.querySelector('app-photo-viewer dialog')?.dispatchEvent(new Event('close'));
+            fixture.detectChanges();
+            expect(urls.alive().length).toBe(before);
+          });
+
+          it('is not one of the item actions: it does not close a form or discard what was typed', async () => {
+            const { fixture, element } = await setupPhotos();
+            await click(fixture, button(element, 'Add item'));
+            typeIn(element, 'item-name', 'Typed');
+            await click(fixture, iconButton(element, 'View photo of Hammer'));
+            expect(element.querySelector('app-photo-viewer')).not.toBeNull();
+            expect((element.querySelector('#item-name') as HTMLInputElement).value).toBe('Typed');
+
+            element.querySelector('app-photo-viewer dialog')?.dispatchEvent(new Event('close'));
+            fixture.detectChanges();
+            expect((element.querySelector('#item-name') as HTMLInputElement).value).toBe('Typed');
+          });
+
+          it('does not clear the last message', async () => {
+            const { fixture, element } = await setupPhotos();
+            await click(fixture, iconButton(element, 'Delete Nails'));
+            await click(fixture, element.querySelector('.item-confirm-delete') as HTMLButtonElement);
+            expect(itemNotice(element)).toBe('Deleted Nails');
+            await click(fixture, iconButton(element, 'View photo of Hammer'));
+            expect(itemNotice(element)).toBe('Deleted Nails');
+          });
+
+          it('closes when another container is selected', async () => {
+            const { fixture, element } = await setupPhotos();
+            await click(fixture, iconButton(element, 'View photo of Hammer'));
+            fixture.componentRef.setInput(
+              'container',
+              createContainer(TOUGH_BOX_27_GAL.id, 'Books', 2000, 0),
+            );
+            fixture.detectChanges();
+            expect(element.querySelector('app-photo-viewer')).toBeNull();
+          });
         });
       });
 

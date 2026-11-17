@@ -9,21 +9,35 @@
           <app-item-form
             [item]="row.item"
             [categories]="categories()"
+            [focusOn]="editFocus()"
             (saved)="editSaved.emit($event)"
             (closed)="editCancelled.emit()"
           />
         } @else {
-          <div class="item-head">
-            <!-- &ngsp; keeps a space between the two texts, so they are not read as one word. -->
-            <span class="item-name">{{ row.name }}</span
-            >&ngsp;<span class="item-quantity">{{ row.quantity }}</span>
+          <!-- The thumbnail on the left, when the item has a photo, and the text beside it. -->
+          <div class="item-main">
+            @if (row.photoId) {
+              <app-item-photo
+                [photoId]="row.photoId"
+                [name]="row.name"
+                (opened)="photoOpened.emit(row.id)"
+                (missing)="onPhotoMissing($event)"
+              />
+            }
+            <div class="item-text">
+              <div class="item-head">
+                <!-- &ngsp; keeps a space between the two texts, so they are not read as one word. -->
+                <span class="item-name">{{ row.name }}</span
+                >&ngsp;<span class="item-quantity">{{ row.quantity }}</span>
+              </div>
+              @if (row.category) {
+                <p class="item-category">Category: {{ row.category }}</p>
+              }
+              @if (row.description) {
+                <p class="item-description">{{ row.description }}</p>
+              }
+            </div>
           </div>
-          @if (row.category) {
-            <p class="item-category">Category: {{ row.category }}</p>
-          }
-          @if (row.description) {
-            <p class="item-description">{{ row.description }}</p>
-          }
           @if (row.outLabel) {
             <!-- Units out of the container: said with text inside a box, never with color alone. -->
             <p class="item-out">{{ row.outLabel }}</p>
@@ -74,6 +88,19 @@
                   (click)="unitsRequested.emit({ itemId: row.id, mode: 'used' })"
                 >
                   Used
+                </button>
+              </div>
+            }
+            @if (!row.photoId) {
+              <!-- A photo is optional but recommended: items without one offer to add it. -->
+              <div class="item-photo-actions">
+                <button
+                  class="button item-add-photo"
+                  type="button"
+                  [attr.aria-label]="'Add photo to ' + row.name"
+                  (click)="photoAddRequested.emit(row.id)"
+                >
+                  Add photo
                 </button>
               </div>
             }

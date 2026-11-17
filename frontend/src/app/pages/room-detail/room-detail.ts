@@ -11,6 +11,7 @@ import {
 import { stackOf } from '../../core/container-stack';
 import { createContainer, nextContainerName } from '../../core/container.model';
 import { createItem, isValidItemDraft, ItemDraft } from '../../core/item.model';
+import { PhotoStore } from '../../core/photo-store';
 import { roomNameSchema } from '../../core/room-name-schema';
 import { RoomSize } from '../../core/room-resize';
 import { RoomStore } from '../../core/room-store';
@@ -41,6 +42,7 @@ function isTypingTarget(target: EventTarget | null): boolean {
 })
 export class RoomDetail {
   private readonly store = inject(RoomStore);
+  private readonly photos = inject(PhotoStore);
   private readonly route = inject(ActivatedRoute);
 
   private readonly id = toSignal(this.route.paramMap.pipe(map((params) => params.get('id'))), {
@@ -204,8 +206,13 @@ export class RoomDetail {
   protected onItemAdded(draft: ItemDraft): void {
     const room = this.room();
     const container = this.selectedContainer();
-    if (room && container && isValidItemDraft(draft)) {
+    const saved =
+      room !== undefined &&
+      container !== undefined &&
+      isValidItemDraft(draft) &&
       this.store.addItem(room.id, container.id, createItem(draft));
+    if (!saved) {
+      this.deleteUnusedPhoto(draft.photoId);
     }
   }
 
@@ -213,8 +220,24 @@ export class RoomDetail {
   protected onItemEdited(edited: ItemEdited): void {
     const room = this.room();
     const container = this.selectedContainer();
-    if (room && container) {
+    const current = container?.items.find((item) => item.id === edited.itemId);
+    const saved =
+      room !== undefined &&
+      container !== undefined &&
       this.store.updateItem(room.id, container.id, edited.itemId, edited.draft);
+    // A photo that came with the new values and is not the one the item already had.
+    if (!saved && edited.draft.photoId !== current?.photoId) {
+      this.deleteUnusedPhoto(edited.draft.photoId);
+    }
+  }
+
+  /**
+   * The form saves a new photo before the item. When the item is then not saved, nothing uses
+   * that photo, so it is deleted. If the deletion fails, the cleanup of the next start removes it.
+   */
+  private deleteUnusedPhoto(photoId: string | null): void {
+    if (typeof photoId === 'string' && photoId.length > 0) {
+      this.photos.delete([photoId]).catch(() => undefined);
     }
   }
 

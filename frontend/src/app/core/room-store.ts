@@ -114,7 +114,10 @@ function trimAndCut(text: string, maxLength: number): string {
  *   becomes 1;
  * - the units out that are missing (items saved before they existed) or are not a number become
  *   0; a number is rounded and kept from 0 to the quantity of the item;
- * - a description or category that is not text becomes empty.
+ * - a description or category that is not text becomes empty;
+ * - a photo id that is missing (items saved before photos existed) or is not a text becomes
+ *   null: the item has no photo. Whether the photo still exists is not checked here, because
+ *   the photo store is asynchronous.
  */
 function loadItems(value: unknown, seenIds: Set<string>): Item[] {
   if (!Array.isArray(value)) {
@@ -143,6 +146,7 @@ function loadItems(value: unknown, seenIds: Set<string>): Item[] {
         ? Math.min(ITEM_QUANTITY_MAX, Math.max(ITEM_QUANTITY_MIN, Math.round(savedQuantity)))
         : ITEM_QUANTITY_DEFAULT;
     const savedOut = saved['quantityOut'];
+    const savedPhotoId = saved['photoId'];
     const description = saved['description'];
     const category = saved['category'];
     items.push({
@@ -159,6 +163,7 @@ function loadItems(value: unknown, seenIds: Set<string>): Item[] {
         typeof category === 'string'
           ? trimAndCut(cleanCategory(category), ITEM_CATEGORY_MAX_LENGTH)
           : '',
+      photoId: typeof savedPhotoId === 'string' && savedPhotoId.length > 0 ? savedPhotoId : null,
     });
   }
   return items;
@@ -201,16 +206,20 @@ function loadContainers(value: unknown, seenItemIds: Set<string>): Container[] {
   return normalizeStacks(containers);
 }
 
-/** Reads the saved rooms. Any problem (no storage, bad JSON, wrong shape) gives an empty list. */
-function loadRooms(): Room[] {
+/**
+ * Reads the saved rooms. Any problem (no storage, bad JSON, wrong shape) gives an empty list.
+ * `ok` tells an empty list that is true (nothing saved yet, or a saved list) from one that hides
+ * a problem: the saved rooms could not be read, so they may still have items and photos.
+ */
+function loadRooms(): { rooms: Room[]; ok: boolean } {
   try {
     const raw = localStorage.getItem(ROOMS_STORAGE_KEY);
     if (raw === null) {
-      return [];
+      return { rooms: [], ok: true };
     }
     const parsed: unknown = JSON.parse(raw);
     if (!Array.isArray(parsed)) {
-      return [];
+      return { rooms: [], ok: false };
     }
     const seenIds = new Set<string>();
     // Item ids are unique across all the rooms, so one set is shared by the whole load.
@@ -228,9 +237,9 @@ function loadRooms(): Room[] {
         });
       }
     }
-    return rooms;
+    return { rooms, ok: true };
   } catch {
-    return [];
+    return { rooms: [], ok: false };
   }
 }
 
@@ -241,7 +250,15 @@ function loadRooms(): Room[] {
  */
 @Service()
 export class RoomStore {
-  private readonly roomsState = signal<Room[]>(loadRooms());
+  private readonly loaded = loadRooms();
+  private readonly roomsState = signal<Room[]>(this.loaded.rooms);
+
+  /**
+   * False when the saved rooms could not be read (no storage, bad JSON, wrong shape): the list
+   * starts empty, but that does not mean the user has no items. The photo cleanup reads it, so
+   * that it never deletes photos because of data it could not read.
+   */
+  readonly loadedOk: boolean = this.loaded.ok;
 
   /** Read-only view of the rooms. Change them only through the methods below. */
   readonly rooms = this.roomsState.asReadonly();
@@ -526,6 +543,7 @@ export class RoomStore {
       quantityOut: item.quantityOut,
       description: item.description.trim(),
       category: canonicalCategory(item.category, this.categories()),
+      photoId: item.photoId,
     };
     this.updateRoom(roomId, (r) => ({
       ...r,
@@ -537,7 +555,7 @@ export class RoomStore {
   }
 
   /**
-   * Changes the name, quantity, description and category of an item. The item keeps its id and
+   * Changes the name, quantity, description, category and photo id of an item. The item keeps its id and
    * its place in the list. The name and the description are saved trimmed. The category is
    * compared with the categories of the other items (in any room): when one of them already uses
    * it, its spelling is reused; when no other item uses it, the cleaned text is saved, so the
@@ -560,12 +578,14 @@ export class RoomStore {
       quantityOut: current.quantityOut,
       description: draft.description.trim(),
       category: canonicalCategory(draft.category, usedCategories(this.roomsState(), itemId)),
+      photoId: draft.photoId,
     };
     if (
       saved.name === current.name &&
       saved.quantity === current.quantity &&
       saved.description === current.description &&
-      saved.category === current.category
+      saved.category === current.category &&
+      saved.photoId === current.photoId
     ) {
       return true;
     }

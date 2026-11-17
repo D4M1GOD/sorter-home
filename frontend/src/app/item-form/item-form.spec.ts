@@ -1,6 +1,18 @@
+import { signal, WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { vi } from 'vitest';
 import { Item } from '../core/item.model';
+import { PhotoError, PhotoProcessor } from '../core/photo-processor';
+import { PhotoStore, ProcessedPhoto } from '../core/photo-store';
+import {
+  fakePhoto,
+  FakePhotoStore,
+  ObjectUrls,
+  settle,
+  stubObjectUrls,
+} from '../core/photo-store.testing';
+import { TouchScreen } from '../core/touch-screen';
+import { PointerQueryStub, stubMatchMedia } from '../core/touch-screen.testing';
 import { ItemForm } from './item-form';
 
 describe('ItemForm', () => {
@@ -75,7 +87,7 @@ describe('ItemForm', () => {
       const labels = Array.from(element.querySelectorAll('button')).map((b) =>
         b.textContent?.trim(),
       );
-      expect(labels).toEqual(['Add', 'Done']);
+      expect(labels).toEqual(['Add photo', 'Add', 'Done']);
       expect(button(element, 'Add')?.type).toBe('submit');
       expect(button(element, 'Done')?.type).toBe('button');
     });
@@ -122,6 +134,7 @@ describe('ItemForm', () => {
         quantity: 100,
         description: 'Box of 100\n2 in',
         category: 'Hardware',
+        photoId: null,
       });
     });
 
@@ -134,6 +147,7 @@ describe('ItemForm', () => {
         quantity: 1,
         description: '',
         category: '',
+        photoId: null,
       });
     });
 
@@ -306,6 +320,7 @@ describe('ItemForm', () => {
       quantityOut: 0,
       description: 'Box of 100\n2 in',
       category: 'Hardware',
+      photoId: null,
     };
 
     async function setupEdit(item: Item = nails, categories: string[] = []) {
@@ -334,7 +349,7 @@ describe('ItemForm', () => {
       const labels = Array.from(element.querySelectorAll('button')).map((b) =>
         b.textContent?.trim(),
       );
-      expect(labels).toEqual(['Save', 'Cancel']);
+      expect(labels).toEqual(['Add photo', 'Save', 'Cancel']);
       expect(button(element, 'Save')?.type).toBe('submit');
       expect(button(element, 'Cancel')?.type).toBe('button');
     });
@@ -373,6 +388,7 @@ describe('ItemForm', () => {
         quantity: 85,
         description: '',
         category: 'Tools',
+        photoId: null,
       });
       expect(added).not.toHaveBeenCalled();
     });
@@ -385,6 +401,7 @@ describe('ItemForm', () => {
         quantity: 100,
         description: 'Box of 100\n2 in',
         category: 'Hardware',
+        photoId: null,
       });
     });
 
@@ -498,6 +515,832 @@ describe('ItemForm', () => {
         await submitForm(fixture, element);
         expect(added).toHaveBeenCalledTimes(1);
       });
+    });
+  });
+
+  describe('photo', () => {
+    const hammer: Item = {
+      id: 'item-1',
+      name: 'Hammer',
+      quantity: 1,
+      quantityOut: 0,
+      description: '',
+      category: '',
+      photoId: null,
+    };
+
+    let photos: FakePhotoStore;
+    let urls: ObjectUrls;
+    /** What the fake processor does with the chosen file. By default it gives a photo. */
+    let process: ReturnType<typeof vi.fn>;
+
+    beforeEach(() => {
+      photos = new FakePhotoStore();
+      urls = stubObjectUrls();
+      process = vi.fn(async () => fakePhoto('chosen'));
+      TestBed.configureTestingModule({
+        providers: [
+          { provide: PhotoStore, useValue: photos },
+          { provide: PhotoProcessor, useValue: { process } },
+        ],
+      });
+    });
+
+    afterEach(() => {
+      urls.restore();
+    });
+
+    async function setupPhoto(options: { item?: Item; focusOn?: 'name' | 'photo' } = {}) {
+      const fixture = TestBed.createComponent(ItemForm);
+      if (options.item) {
+        fixture.componentRef.setInput('item', options.item);
+      }
+      if (options.focusOn) {
+        fixture.componentRef.setInput('focusOn', options.focusOn);
+      }
+      document.body.appendChild(fixture.nativeElement);
+      fixture.detectChanges();
+      await fixture.whenStable();
+      await settle();
+      fixture.detectChanges();
+      const added = vi.fn();
+      const saved = vi.fn();
+      fixture.componentInstance.added.subscribe(added);
+      fixture.componentInstance.saved.subscribe(saved);
+      const element = fixture.nativeElement as HTMLElement;
+      return { fixture, element, added, saved };
+    }
+
+    function fileInput(element: HTMLElement): HTMLInputElement {
+      return element.querySelector('input[type="file"]') as HTMLInputElement;
+    }
+
+    const picture = new File(['pixels'], 'hammer.jpg', { type: 'image/jpeg' });
+
+    /** What the browser does after the user picks a file: it fills the field and fires "change". */
+    async function choose(
+      fixture: ComponentFixture<unknown>,
+      element: HTMLElement,
+      file = picture,
+      input = fileInput(element),
+    ) {
+      Object.defineProperty(input, 'files', { value: [file], configurable: true });
+      input.dispatchEvent(new Event('change'));
+      await settle();
+      fixture.detectChanges();
+      await fixture.whenStable();
+    }
+
+    async function submitAndSettle(fixture: ComponentFixture<unknown>, element: HTMLElement) {
+      element.querySelector('form')?.dispatchEvent(new Event('submit'));
+      await settle();
+      fixture.detectChanges();
+      await fixture.whenStable();
+    }
+
+    function photoButtons(element: HTMLElement): (string | undefined)[] {
+      return Array.from(element.querySelectorAll('[role="group"] button')).map((b) =>
+        b.textContent?.trim(),
+      );
+    }
+
+    function photoErrors(element: HTMLElement): string[] {
+      return Array.from(element.querySelectorAll('#item-photo-status .field-error')).map(
+        (e) => e.textContent?.trim() ?? '',
+      );
+    }
+
+    describe('the field', () => {
+      it('is a group named "Photo (optional)", after the category and before the buttons', async () => {
+        const { element } = await setupPhoto();
+        const group = element.querySelector('[role="group"]') as HTMLElement;
+        const label = element.querySelector(`#${group.getAttribute('aria-labelledby')}`);
+        expect(label?.textContent?.trim()).toBe('Photo (optional)');
+        const parts = [field(element, 'item-category'), group, button(element, 'Add')] as Element[];
+        for (let i = 0; i < parts.length - 1; i++) {
+          expect(
+            parts[i].compareDocumentPosition(parts[i + 1]) & Node.DOCUMENT_POSITION_FOLLOWING,
+          ).toBeTruthy();
+        }
+      });
+
+      it('has one hidden file field that accepts images, without "capture"', async () => {
+        const { element } = await setupPhoto();
+        const input = fileInput(element);
+        expect(element.querySelectorAll('input[type="file"]').length).toBe(1);
+        expect(input.getAttribute('accept')).toBe('image/*');
+        expect(input.hasAttribute('capture')).toBe(false);
+        expect(input.hasAttribute('multiple')).toBe(false);
+        // Out of the way of the keyboard and of screen readers: the buttons stand for it.
+        expect(input.hidden).toBe(true);
+        expect(input.getAttribute('tabindex')).toBe('-1');
+      });
+
+      it('offers "Add photo" when there is no photo, and it opens the file field', async () => {
+        const { element } = await setupPhoto();
+        expect(photoButtons(element)).toEqual(['Add photo']);
+        expect(element.querySelector('.photo-preview')).toBeNull();
+        const click = vi.spyOn(fileInput(element), 'click').mockImplementation(() => undefined);
+        (element.querySelector('.photo-add') as HTMLButtonElement).click();
+        expect(click).toHaveBeenCalledTimes(1);
+        expect((element.querySelector('.photo-add') as HTMLButtonElement).type).toBe('button');
+      });
+
+      it('has empty areas for the status and the error', async () => {
+        const { element } = await setupPhoto();
+        const status = element.querySelector('.photo-status') as HTMLElement;
+        expect(status.getAttribute('role')).toBe('status');
+        expect(status.textContent?.trim()).toBe('');
+        expect(element.querySelector('#item-photo-status')?.getAttribute('role')).toBe('alert');
+        expect(photoErrors(element)).toEqual([]);
+      });
+    });
+
+    describe('choosing a photo', () => {
+      it('prepares the chosen file and shows its preview, with "Replace" and "Remove"', async () => {
+        const { fixture, element } = await setupPhoto();
+        await choose(fixture, element);
+        expect(process).toHaveBeenCalledTimes(1);
+        expect(process).toHaveBeenCalledWith(picture);
+        const image = element.querySelector('.photo-preview img') as HTMLImageElement;
+        expect(image.getAttribute('src')).toBe(urls.created[0]);
+        expect(image.getAttribute('alt')).toBe('Photo preview');
+        expect(photoButtons(element)).toEqual(['Replace', 'Remove']);
+        expect(element.querySelector('.photo-replace')?.getAttribute('aria-label')).toBe(
+          'Replace photo',
+        );
+        expect(element.querySelector('.photo-remove')?.getAttribute('aria-label')).toBe(
+          'Remove photo',
+        );
+      });
+
+      it('saves nothing and emits nothing until "Add"', async () => {
+        const { fixture, element, added } = await setupPhoto();
+        await choose(fixture, element);
+        expect(photos.saved.size).toBe(0);
+        expect(added).not.toHaveBeenCalled();
+      });
+
+      it('puts the focus on "Replace", because "Add photo" is gone', async () => {
+        const { fixture, element } = await setupPhoto();
+        await choose(fixture, element);
+        expect(document.activeElement).toBe(element.querySelector('.photo-replace'));
+      });
+
+      it('empties the file field, so the same file can be chosen again', async () => {
+        const { fixture, element } = await setupPhoto();
+        await choose(fixture, element);
+        expect(fileInput(element).value).toBe('');
+      });
+
+      it('does nothing when the user closes the file picker without choosing', async () => {
+        const { fixture, element } = await setupPhoto();
+        fileInput(element).dispatchEvent(new Event('change'));
+        await settle();
+        fixture.detectChanges();
+        expect(process).not.toHaveBeenCalled();
+        expect(photoButtons(element)).toEqual(['Add photo']);
+      });
+
+      it('says "Preparing photo…" while the file is prepared, and "Add" waits', async () => {
+        let finish: (photo: ProcessedPhoto) => void = () => undefined;
+        process.mockImplementation(() => new Promise<ProcessedPhoto>((resolve) => (finish = resolve)));
+        const { fixture, element, added } = await setupPhoto();
+        type(element, 'item-name', 'Hammer');
+        await choose(fixture, element);
+        expect(element.querySelector('.photo-status')?.textContent?.trim()).toBe('Preparing photo…');
+
+        await submitAndSettle(fixture, element);
+        expect(added).not.toHaveBeenCalled();
+        expect(field(element, 'item-name').value).toBe('Hammer');
+
+        finish(fakePhoto('chosen'));
+        await settle();
+        fixture.detectChanges();
+        expect(element.querySelector('.photo-status')?.textContent?.trim()).toBe('');
+        await submitAndSettle(fixture, element);
+        expect(added).toHaveBeenCalledTimes(1);
+      });
+
+      it('"Replace" opens the file field, and the new photo takes the place of the other', async () => {
+        const { fixture, element } = await setupPhoto();
+        await choose(fixture, element);
+        const click = vi.spyOn(fileInput(element), 'click').mockImplementation(() => undefined);
+        (element.querySelector('.photo-replace') as HTMLButtonElement).click();
+        expect(click).toHaveBeenCalledTimes(1);
+
+        process.mockResolvedValue(fakePhoto('second'));
+        await choose(fixture, element);
+        expect(urls.created.length).toBe(2);
+        expect(urls.revoked).toEqual([urls.created[0]]);
+        expect(element.querySelector('.photo-preview img')?.getAttribute('src')).toBe(
+          urls.created[1],
+        );
+      });
+
+      it('"Remove" takes the photo out, revokes its address and puts the focus on "Add photo"', async () => {
+        const { fixture, element } = await setupPhoto();
+        await choose(fixture, element);
+        (element.querySelector('.photo-remove') as HTMLButtonElement).click();
+        fixture.detectChanges();
+        await fixture.whenStable();
+        expect(photoButtons(element)).toEqual(['Add photo']);
+        expect(element.querySelector('.photo-preview')).toBeNull();
+        expect(urls.alive()).toEqual([]);
+        expect(document.activeElement).toBe(element.querySelector('.photo-add'));
+      });
+    });
+
+    describe('a file with a problem', () => {
+      const messages = [
+        'This file is not an image.',
+        'This photo is too large. The maximum is 30 MB.',
+        "Couldn't read this image. Try a JPEG or PNG photo.",
+      ];
+
+      it('shows the error of the file, and leaves the form without a photo', async () => {
+        for (const message of messages) {
+          process.mockRejectedValueOnce(new PhotoError(message));
+          const { fixture, element } = await setupPhoto();
+          await choose(fixture, element);
+          expect(photoErrors(element)).toEqual([message]);
+          expect(photoButtons(element)).toEqual(['Add photo']);
+          expect(element.querySelector('.photo-status')?.textContent?.trim()).toBe('');
+          document.body.replaceChildren();
+        }
+      });
+
+      it('says the image could not be read for any other failure', async () => {
+        process.mockRejectedValueOnce(new Error('out of memory'));
+        const { fixture, element } = await setupPhoto();
+        await choose(fixture, element);
+        expect(photoErrors(element)).toEqual(["Couldn't read this image. Try a JPEG or PNG photo."]);
+      });
+
+      it('keeps the photo that was already chosen', async () => {
+        const { fixture, element } = await setupPhoto();
+        await choose(fixture, element);
+        process.mockRejectedValueOnce(new PhotoError(messages[0]));
+        await choose(fixture, element);
+        expect(photoErrors(element)).toEqual([messages[0]]);
+        expect(element.querySelector('.photo-preview img')?.getAttribute('src')).toBe(
+          urls.created[0],
+        );
+      });
+
+      it('clears the error when a good file is chosen, or the photo is removed', async () => {
+        process.mockRejectedValueOnce(new PhotoError(messages[0]));
+        const { fixture, element } = await setupPhoto();
+        await choose(fixture, element);
+        await choose(fixture, element);
+        expect(photoErrors(element)).toEqual([]);
+
+        process.mockRejectedValueOnce(new PhotoError(messages[1]));
+        await choose(fixture, element);
+        expect(photoErrors(element)).toEqual([messages[1]]);
+        (element.querySelector('.photo-remove') as HTMLButtonElement).click();
+        fixture.detectChanges();
+        expect(photoErrors(element)).toEqual([]);
+      });
+
+      it('still adds the item, without a photo', async () => {
+        process.mockRejectedValueOnce(new PhotoError(messages[0]));
+        const { fixture, element, added } = await setupPhoto();
+        type(element, 'item-name', 'Hammer');
+        await choose(fixture, element);
+        await submitAndSettle(fixture, element);
+        expect(added).toHaveBeenCalledTimes(1);
+        expect(added.mock.calls[0][0].photoId).toBeNull();
+      });
+    });
+
+    describe('adding an item', () => {
+      it('emits no photo, and saves none, for an item without a photo', async () => {
+        const { fixture, element, added } = await setupPhoto();
+        type(element, 'item-name', 'Hammer');
+        await submitAndSettle(fixture, element);
+        expect(added.mock.calls[0][0].photoId).toBeNull();
+        expect(photos.saved.size).toBe(0);
+      });
+
+      it('saves the photo first, and then emits the item with the id of the photo', async () => {
+        const { fixture, element, added } = await setupPhoto();
+        const save = vi.spyOn(photos, 'save');
+        added.mockImplementation(() => {
+          // The photo is already saved when the item is emitted.
+          expect(photos.saved.has('photo-1')).toBe(true);
+        });
+        type(element, 'item-name', 'Hammer');
+        await choose(fixture, element);
+        await submitAndSettle(fixture, element);
+        expect(save).toHaveBeenCalledTimes(1);
+        expect(added).toHaveBeenCalledTimes(1);
+        expect(added).toHaveBeenCalledWith({
+          name: 'Hammer',
+          quantity: 1,
+          description: '',
+          category: '',
+          photoId: 'photo-1',
+        });
+        expect(await photos.saved.get('photo-1')?.thumbnail.text()).toBe('chosen-thumbnail');
+        expect(await photos.saved.get('photo-1')?.full.text()).toBe('chosen-full');
+      });
+
+      it('goes back to a clean form, without the photo, and revokes its address', async () => {
+        const { fixture, element } = await setupPhoto();
+        type(element, 'item-name', 'Hammer');
+        await choose(fixture, element);
+        await submitAndSettle(fixture, element);
+        expect(element.querySelector('.status')?.textContent?.trim()).toBe('Added Hammer');
+        expect(photoButtons(element)).toEqual(['Add photo']);
+        expect(urls.alive()).toEqual([]);
+        expect(document.activeElement).toBe(field(element, 'item-name'));
+
+        // The next item does not get the photo of the one before.
+        type(element, 'item-name', 'Nails');
+        await submitAndSettle(fixture, element);
+        expect(photos.saved.size).toBe(1);
+      });
+
+      it('says "Couldn\'t save the photo." and does not add the item when the photo cannot be saved', async () => {
+        photos.failSave = true;
+        const { fixture, element, added } = await setupPhoto();
+        type(element, 'item-name', 'Hammer');
+        type(element, 'item-quantity', '3');
+        await choose(fixture, element);
+        await submitAndSettle(fixture, element);
+        expect(added).not.toHaveBeenCalled();
+        expect(photoErrors(element)).toEqual(["Couldn't save the photo."]);
+        expect(element.querySelector('.status')?.textContent?.trim()).toBe('');
+        // Nothing the user typed or chose is lost.
+        expect(field(element, 'item-name').value).toBe('Hammer');
+        expect(field(element, 'item-quantity').value).toBe('3');
+        expect(photoButtons(element)).toEqual(['Replace', 'Remove']);
+      });
+
+      it('adds the item when the save works on a second try, and clears the error', async () => {
+        photos.failSave = true;
+        const { fixture, element, added } = await setupPhoto();
+        type(element, 'item-name', 'Hammer');
+        await choose(fixture, element);
+        await submitAndSettle(fixture, element);
+        photos.failSave = false;
+        await submitAndSettle(fixture, element);
+        expect(added).toHaveBeenCalledTimes(1);
+        expect(added.mock.calls[0][0].photoId).toBe('photo-1');
+        expect(photoErrors(element)).toEqual([]);
+      });
+
+      it('saves no photo when the form has an error in another field', async () => {
+        const { fixture, element, added } = await setupPhoto();
+        await choose(fixture, element); // the name is empty
+        await submitAndSettle(fixture, element);
+        expect(added).not.toHaveBeenCalled();
+        expect(photos.saved.size).toBe(0);
+      });
+
+      it('saves the photo once when "Add" is pressed twice in a row', async () => {
+        const { fixture, element, added } = await setupPhoto();
+        type(element, 'item-name', 'Hammer');
+        await choose(fixture, element);
+        element.querySelector('form')?.dispatchEvent(new Event('submit'));
+        element.querySelector('form')?.dispatchEvent(new Event('submit'));
+        await settle();
+        fixture.detectChanges();
+        expect(photos.saved.size).toBe(1);
+        expect(added).toHaveBeenCalledTimes(1);
+      });
+    });
+
+    describe('editing an item', () => {
+      const withPhoto: Item = { ...hammer, photoId: 'p-old' };
+
+      beforeEach(() => {
+        photos.add('p-old');
+      });
+
+      it('shows the photo of the item, loaded from its thumbnail', async () => {
+        const load = vi.spyOn(photos, 'load');
+        const { element } = await setupPhoto({ item: withPhoto });
+        expect(load).toHaveBeenCalledWith('p-old', 'thumbnail');
+        expect(element.querySelector('.photo-preview img')?.getAttribute('src')).toBe(
+          urls.created[0],
+        );
+        expect(photoButtons(element)).toEqual(['Replace', 'Remove']);
+      });
+
+      it('offers "Add photo" for an item without a photo', async () => {
+        const { element } = await setupPhoto({ item: hammer });
+        expect(photoButtons(element)).toEqual(['Add photo']);
+      });
+
+      it('keeps the photo, and saves no new one, when the photo is not touched', async () => {
+        const { fixture, element, saved } = await setupPhoto({ item: withPhoto });
+        type(element, 'item-name', 'Claw hammer');
+        await submitAndSettle(fixture, element);
+        expect(saved.mock.calls[0][0].photoId).toBe('p-old');
+        expect([...photos.saved.keys()]).toEqual(['p-old']);
+      });
+
+      it('saves the new photo and emits its id when the photo is replaced', async () => {
+        const { fixture, element, saved } = await setupPhoto({ item: withPhoto });
+        await choose(fixture, element);
+        expect(element.querySelector('.photo-preview img')?.getAttribute('src')).toBe(
+          urls.created[1],
+        );
+        expect(photos.saved.size).toBe(1); // nothing saved until "Save"
+        await submitAndSettle(fixture, element);
+        expect(saved).toHaveBeenCalledTimes(1);
+        expect(saved.mock.calls[0][0].photoId).toBe('photo-1');
+        // The form does not delete the old photo: the photo cleanup does, once the item is saved.
+        expect(photos.deleted).toEqual([]);
+        expect(photos.saved.has('p-old')).toBe(true);
+      });
+
+      it('emits no photo when the photo is removed, without deleting it', async () => {
+        const { fixture, element, saved } = await setupPhoto({ item: withPhoto });
+        (element.querySelector('.photo-remove') as HTMLButtonElement).click();
+        fixture.detectChanges();
+        await fixture.whenStable();
+        expect(photoButtons(element)).toEqual(['Add photo']);
+        expect(document.activeElement).toBe(element.querySelector('.photo-add'));
+        expect(photos.deleted).toEqual([]);
+        await submitAndSettle(fixture, element);
+        expect(saved.mock.calls[0][0].photoId).toBeNull();
+        expect(photos.deleted).toEqual([]);
+      });
+
+      it('leaves everything as it was when a photo is chosen and the form is cancelled', async () => {
+        const { fixture, element, saved } = await setupPhoto({ item: withPhoto });
+        const closed = vi.fn();
+        fixture.componentInstance.closed.subscribe(closed);
+        await choose(fixture, element);
+        button(element, 'Cancel')?.click();
+        expect(closed).toHaveBeenCalledTimes(1);
+        expect(saved).not.toHaveBeenCalled();
+        expect([...photos.saved.keys()]).toEqual(['p-old']);
+        expect(photos.deleted).toEqual([]);
+      });
+
+      it('does not save the item when the new photo cannot be saved', async () => {
+        photos.failSave = true;
+        const { fixture, element, saved } = await setupPhoto({ item: withPhoto });
+        await choose(fixture, element);
+        await submitAndSettle(fixture, element);
+        expect(saved).not.toHaveBeenCalled();
+        expect(photoErrors(element)).toEqual(["Couldn't save the photo."]);
+      });
+
+      it('treats a photo that does not exist any more as no photo', async () => {
+        const { fixture, element, saved } = await setupPhoto({
+          item: { ...hammer, photoId: 'p-lost' },
+        });
+        expect(photoButtons(element)).toEqual(['Add photo']);
+        expect(element.querySelector('.photo-preview')).toBeNull();
+        await submitAndSettle(fixture, element);
+        expect(saved.mock.calls[0][0].photoId).toBeNull();
+      });
+    });
+
+    describe('the camera button', () => {
+      const withPhoto: Item = { ...hammer, photoId: 'p-old' };
+      const messages = [
+        'This file is not an image.',
+        'This photo is too large. The maximum is 30 MB.',
+        "Couldn't read this image. Try a JPEG or PNG photo.",
+      ];
+      let touch: WritableSignal<boolean>;
+
+      function cameraInput(element: HTMLElement): HTMLInputElement | null {
+        return element.querySelector('input[capture]');
+      }
+
+      /**
+       * What the user does: presses a button of the photo field (the picker is not really
+       * opened) and then the browser reports the chosen file on the field of that button.
+       */
+      async function pick(
+        fixture: ComponentFixture<unknown>,
+        element: HTMLElement,
+        buttonSelector: string,
+        file = picture,
+      ) {
+        const input = buttonSelector === '.photo-camera' ? cameraInput(element)! : fileInput(element);
+        const click = vi.spyOn(input, 'click').mockImplementation(() => undefined);
+        (element.querySelector(buttonSelector) as HTMLButtonElement).click();
+        click.mockRestore();
+        await choose(fixture, element, file, input);
+      }
+
+      beforeEach(() => {
+        photos.add('p-old');
+        touch = signal(true);
+        TestBed.configureTestingModule({
+          providers: [{ provide: TouchScreen, useValue: { coarse: touch } }],
+        });
+      });
+
+      describe('where it is shown', () => {
+        it('shows "Take photo" next to "Add photo" when there is no photo', async () => {
+          const { element } = await setupPhoto();
+          expect(photoButtons(element)).toEqual(['Add photo', 'Take photo']);
+        });
+
+        it('shows "Replace", "Take photo" and "Remove" when there is a photo, in that order', async () => {
+          const { element } = await setupPhoto({ item: withPhoto });
+          expect(photoButtons(element)).toEqual(['Replace', 'Take photo', 'Remove']);
+        });
+
+        it('shows it after a photo is chosen, and again after it is removed', async () => {
+          const { fixture, element } = await setupPhoto();
+          await choose(fixture, element);
+          expect(photoButtons(element)).toEqual(['Replace', 'Take photo', 'Remove']);
+          (element.querySelector('.photo-remove') as HTMLButtonElement).click();
+          fixture.detectChanges();
+          expect(photoButtons(element)).toEqual(['Add photo', 'Take photo']);
+        });
+
+        it('shows no camera button with a mouse: one button, as before', async () => {
+          touch.set(false);
+          const empty = await setupPhoto();
+          expect(photoButtons(empty.element)).toEqual(['Add photo']);
+          expect(cameraInput(empty.element)).toBeNull();
+          expect(empty.element.querySelectorAll('input[type="file"]').length).toBe(1);
+          document.body.replaceChildren();
+          const filled = await setupPhoto({ item: withPhoto });
+          expect(photoButtons(filled.element)).toEqual(['Replace', 'Remove']);
+          expect(filled.element.querySelector('.photo-camera')).toBeNull();
+        });
+
+        it('appears and disappears when the screen changes, without reopening the form', async () => {
+          const { fixture, element } = await setupPhoto();
+          touch.set(false);
+          fixture.detectChanges();
+          expect(photoButtons(element)).toEqual(['Add photo']);
+          expect(cameraInput(element)).toBeNull();
+          touch.set(true);
+          fixture.detectChanges();
+          expect(photoButtons(element)).toEqual(['Add photo', 'Take photo']);
+          expect(cameraInput(element)).not.toBeNull();
+        });
+
+        it('keeps its group: the buttons are in the photo field, before the Add and Done buttons', async () => {
+          const { element } = await setupPhoto();
+          const camera = element.querySelector('[role="group"] .photo-camera') as HTMLElement;
+          expect(camera).not.toBeNull();
+          expect(
+            camera.compareDocumentPosition(button(element, 'Add') as Element) &
+              Node.DOCUMENT_POSITION_FOLLOWING,
+          ).toBeTruthy();
+        });
+
+        it('puts the buttons of the field in a row that can wrap, with and without a photo', async () => {
+          const empty = await setupPhoto();
+          expect(empty.element.querySelector('[role="group"] .actions .photo-camera')).not.toBeNull();
+          expect(empty.element.querySelector('[role="group"] .actions .photo-add')).not.toBeNull();
+          document.body.replaceChildren();
+          const filled = await setupPhoto({ item: withPhoto });
+          expect(filled.element.querySelector('[role="group"] .actions .photo-camera')).not.toBeNull();
+        });
+      });
+
+      describe('its field and its name', () => {
+        it('is a second hidden file field that accepts images and uses the rear camera', async () => {
+          const { element } = await setupPhoto();
+          const camera = cameraInput(element) as HTMLInputElement;
+          expect(camera.type).toBe('file');
+          expect(camera.getAttribute('accept')).toBe('image/*');
+          expect(camera.getAttribute('capture')).toBe('environment');
+          expect(camera.hasAttribute('multiple')).toBe(false);
+          expect(camera.hidden).toBe(true);
+          expect(camera.getAttribute('tabindex')).toBe('-1');
+          expect(camera.getAttribute('aria-hidden')).toBe('true');
+          expect(element.querySelectorAll('input[type="file"]').length).toBe(2);
+        });
+
+        it('leaves the field of "Add photo" and "Replace" without "capture"', async () => {
+          const { element } = await setupPhoto();
+          expect(fileInput(element).hasAttribute('capture')).toBe(false);
+          expect(fileInput(element)).not.toBe(cameraInput(element));
+        });
+
+        it('is a button whose name is its visible text, with no aria-label', async () => {
+          const { element } = await setupPhoto();
+          const camera = element.querySelector('.photo-camera') as HTMLButtonElement;
+          expect(camera.textContent?.trim()).toBe('Take photo');
+          expect(camera.hasAttribute('aria-label')).toBe(false);
+          expect(camera.type).toBe('button');
+        });
+
+        it('opens the camera field, and only that one', async () => {
+          const { element } = await setupPhoto();
+          const camera = vi.spyOn(cameraInput(element) as HTMLInputElement, 'click').mockImplementation(() => undefined);
+          const files = vi.spyOn(fileInput(element), 'click').mockImplementation(() => undefined);
+          (element.querySelector('.photo-camera') as HTMLButtonElement).click();
+          expect(camera).toHaveBeenCalledTimes(1);
+          expect(files).not.toHaveBeenCalled();
+        });
+
+        it('leaves "Add photo" and "Replace" opening the file field, and not the camera', async () => {
+          const { fixture, element } = await setupPhoto();
+          const camera = vi.spyOn(cameraInput(element) as HTMLInputElement, 'click').mockImplementation(() => undefined);
+          const files = vi.spyOn(fileInput(element), 'click').mockImplementation(() => undefined);
+          (element.querySelector('.photo-add') as HTMLButtonElement).click();
+          expect(files).toHaveBeenCalledTimes(1);
+          await choose(fixture, element);
+          (element.querySelector('.photo-replace') as HTMLButtonElement).click();
+          expect(files).toHaveBeenCalledTimes(2);
+          expect(camera).not.toHaveBeenCalled();
+        });
+      });
+
+      describe('a photo taken with it', () => {
+        it('goes through the same steps: prepared, previewed, and saved only with "Add"', async () => {
+          const { fixture, element, added } = await setupPhoto();
+          type(element, 'item-name', 'Hammer');
+          await pick(fixture, element, '.photo-camera');
+          expect(process).toHaveBeenCalledTimes(1);
+          expect(process).toHaveBeenCalledWith(picture);
+          expect(element.querySelector('.photo-preview img')?.getAttribute('src')).toBe(urls.created[0]);
+          expect(photos.saved.size).toBe(1); // only the old photo of the test store
+          expect(added).not.toHaveBeenCalled();
+
+          await submitAndSettle(fixture, element);
+          expect(added).toHaveBeenCalledTimes(1);
+          expect(added.mock.calls[0][0].photoId).toBe('photo-1');
+          expect(await photos.saved.get('photo-1')?.full.text()).toBe('chosen-full');
+        });
+
+        it('replaces the photo the item already had, and is saved with "Save"', async () => {
+          const { fixture, element, saved } = await setupPhoto({ item: withPhoto });
+          await pick(fixture, element, '.photo-camera');
+          expect(element.querySelector('.photo-preview img')?.getAttribute('src')).toBe(urls.created[1]);
+          await submitAndSettle(fixture, element);
+          expect(saved.mock.calls[0][0].photoId).toBe('photo-1');
+          expect(photos.deleted).toEqual([]);
+        });
+
+        it('empties its field, so the same photo can be taken again', async () => {
+          const { fixture, element } = await setupPhoto();
+          await pick(fixture, element, '.photo-camera');
+          expect((cameraInput(element) as HTMLInputElement).value).toBe('');
+        });
+
+        it('says "Couldn\'t save the photo." and adds nothing when it cannot be saved', async () => {
+          photos.failSave = true;
+          const { fixture, element, added } = await setupPhoto();
+          type(element, 'item-name', 'Hammer');
+          await pick(fixture, element, '.photo-camera');
+          await submitAndSettle(fixture, element);
+          expect(added).not.toHaveBeenCalled();
+          expect(photoErrors(element)).toEqual(["Couldn't save the photo."]);
+        });
+
+        it('shows the errors of the file, leaves the photo as it was, and says nothing is being prepared', async () => {
+          for (const message of messages) {
+            process.mockRejectedValueOnce(new PhotoError(message));
+            const { fixture, element } = await setupPhoto();
+            await pick(fixture, element, '.photo-camera');
+            expect(photoErrors(element)).toEqual([message]);
+            expect(photoButtons(element)).toEqual(['Add photo', 'Take photo']);
+            expect(element.querySelector('.photo-status')?.textContent?.trim()).toBe('');
+            document.body.replaceChildren();
+          }
+        });
+
+        it('says the image could not be read for any other failure', async () => {
+          process.mockRejectedValueOnce(new Error('out of memory'));
+          const { fixture, element } = await setupPhoto();
+          await pick(fixture, element, '.photo-camera');
+          expect(photoErrors(element)).toEqual(["Couldn't read this image. Try a JPEG or PNG photo."]);
+        });
+
+        it('does nothing when the user comes back from the camera without a photo', async () => {
+          const { fixture, element } = await setupPhoto();
+          const camera = cameraInput(element) as HTMLInputElement;
+          Object.defineProperty(camera, 'files', { value: [], configurable: true });
+          camera.dispatchEvent(new Event('change'));
+          await settle();
+          fixture.detectChanges();
+          expect(process).not.toHaveBeenCalled();
+          expect(photoErrors(element)).toEqual([]);
+          expect(photoButtons(element)).toEqual(['Add photo', 'Take photo']);
+        });
+      });
+
+      describe('focus', () => {
+        const focused = (element: HTMLElement, selector: string) =>
+          expect(document.activeElement).toBe(element.querySelector(selector));
+
+        it('goes to "Add photo" when the form is opened to add a photo, and the camera button is there too', async () => {
+          const { element } = await setupPhoto({ item: hammer, focusOn: 'photo' });
+          focused(element, '.photo-add');
+          expect(element.querySelector('.photo-camera')).not.toBeNull();
+        });
+
+        it('goes to "Replace" after a valid photo when there was no photo (taken or from a file)', async () => {
+          for (const opener of ['.photo-camera', '.photo-add']) {
+            const { fixture, element } = await setupPhoto();
+            await pick(fixture, element, opener);
+            focused(element, '.photo-replace');
+            document.body.replaceChildren();
+          }
+        });
+
+        it('stays on "Take photo" after a valid photo taken when the form already had a photo', async () => {
+          const { fixture, element } = await setupPhoto({ item: withPhoto });
+          await pick(fixture, element, '.photo-camera');
+          focused(element, '.photo-camera');
+        });
+
+        it('stays on "Replace" after a valid photo chosen with it', async () => {
+          const { fixture, element } = await setupPhoto({ item: withPhoto });
+          await pick(fixture, element, '.photo-replace');
+          focused(element, '.photo-replace');
+        });
+
+        it('goes back to the button that opened the picker after an error: "Take photo"', async () => {
+          process.mockRejectedValueOnce(new PhotoError(messages[0]));
+          const { fixture, element } = await setupPhoto();
+          await pick(fixture, element, '.photo-camera');
+          focused(element, '.photo-camera');
+        });
+
+        it('goes back to the button that opened the picker after an error: "Add photo"', async () => {
+          process.mockRejectedValueOnce(new PhotoError(messages[1]));
+          const { fixture, element } = await setupPhoto();
+          await pick(fixture, element, '.photo-add');
+          focused(element, '.photo-add');
+        });
+
+        it('goes back to the button that opened the picker after an error: "Replace" and "Take photo" with a photo', async () => {
+          for (const opener of ['.photo-replace', '.photo-camera']) {
+            process.mockRejectedValueOnce(new PhotoError(messages[2]));
+            const { fixture, element } = await setupPhoto({ item: withPhoto });
+            await pick(fixture, element, opener);
+            focused(element, opener);
+            expect(photoButtons(element)).toEqual(['Replace', 'Take photo', 'Remove']);
+            document.body.replaceChildren();
+          }
+        });
+
+        it('goes to "Add photo" after "Remove"', async () => {
+          const { fixture, element } = await setupPhoto({ item: withPhoto });
+          (element.querySelector('.photo-remove') as HTMLButtonElement).click();
+          fixture.detectChanges();
+          await fixture.whenStable();
+          focused(element, '.photo-add');
+          expect(photoButtons(element)).toEqual(['Add photo', 'Take photo']);
+        });
+      });
+    });
+
+    describe('the camera button with the real touch screen check', () => {
+      let media: PointerQueryStub;
+
+      beforeEach(() => {
+        media = stubMatchMedia(true);
+      });
+
+      afterEach(() => {
+        media.restore();
+      });
+
+      it('is shown when the browser says the main pointer is coarse', async () => {
+        const { element } = await setupPhoto();
+        expect(media.queries).toEqual(['(pointer: coarse)']);
+        expect(photoButtons(element)).toEqual(['Add photo', 'Take photo']);
+      });
+
+      it('is not shown when it is a mouse, and follows the change of the screen', async () => {
+        media.setMatches(false);
+        const { fixture, element } = await setupPhoto();
+        expect(photoButtons(element)).toEqual(['Add photo']);
+        media.setMatches(true);
+        fixture.detectChanges();
+        expect(photoButtons(element)).toEqual(['Add photo', 'Take photo']);
+      });
+    });
+
+    describe('focus when the form opens', () => {
+      it('goes to the name by default', async () => {
+        const { element } = await setupPhoto({ item: hammer });
+        expect(document.activeElement).toBe(field(element, 'item-name'));
+      });
+
+      it('goes to "Add photo" of the photo field when the form is opened to add a photo', async () => {
+        const { element } = await setupPhoto({ item: hammer, focusOn: 'photo' });
+        expect(document.activeElement).toBe(element.querySelector('.photo-add'));
+      });
+    });
+
+    it('revokes every address it created when the form is destroyed', async () => {
+      photos.add('p-old');
+      const { fixture, element } = await setupPhoto({ item: { ...hammer, photoId: 'p-old' } });
+      await choose(fixture, element);
+      expect(urls.created.length).toBe(2);
+      fixture.destroy();
+      expect(urls.alive()).toEqual([]);
     });
   });
 });

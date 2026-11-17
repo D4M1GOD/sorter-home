@@ -14,6 +14,7 @@ describe('delete questions', () => {
       quantityOut: 0,
       description: '',
       category: '',
+      photoId: null,
     }));
   }
 

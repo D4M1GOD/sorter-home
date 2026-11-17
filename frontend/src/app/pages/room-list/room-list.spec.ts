@@ -78,7 +78,13 @@ describe('RoomList', () => {
         const container = createContainer(TOUGH_BOX_27_GAL.id, `Box ${index}`, index * 1000, 0);
         store.addContainer(room.id, container);
         for (let i = 0; i < count; i++) {
-          const draft = { name: `Item ${i}`, quantity: 50, description: '', category: '' };
+          const draft = {
+            name: `Item ${i}`,
+            quantity: 50,
+            description: '',
+            category: '',
+            photoId: null,
+          };
           store.addItem(room.id, container.id, createItem(draft));
         }
       });

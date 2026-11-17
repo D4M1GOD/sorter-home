@@ -1,0 +1,16 @@
+<!-- The "close" event comes after "Close" and after the Escape key. -->
+<dialog #dialog class="viewer" aria-labelledby="photo-viewer-title" (close)="closed.emit()">
+  <h2 id="photo-viewer-title">{{ name() }}</h2>
+  @switch (photo().status) {
+    @case ('ready') {
+      <img [src]="photo().url" [alt]="'Photo of ' + name()" />
+    }
+    @case ('missing') {
+      <p class="viewer-status" role="alert">Couldn't load the photo.</p>
+    }
+    @default {
+      <p class="viewer-status" role="status">Loading photo…</p>
+    }
+  }
+  <button #closeButton class="button" type="button" (click)="close()">Close</button>
+</dialog>

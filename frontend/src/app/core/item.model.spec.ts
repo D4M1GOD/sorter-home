@@ -5,6 +5,7 @@ import {
   isValidItemDraft,
   isValidItemName,
   isValidItemQuantity,
+  isValidPhotoId,
   isValidQuantityOut,
   Item,
   ItemDraft,
@@ -19,7 +20,13 @@ import {
 } from './item.model';
 
 describe('item model', () => {
-  const draft: ItemDraft = { name: 'Nails', quantity: 100, description: '', category: '' };
+  const draft: ItemDraft = {
+    name: 'Nails',
+    quantity: 100,
+    description: '',
+    category: '',
+    photoId: null,
+  };
 
   describe('name', () => {
     it('is required', () => {
@@ -98,6 +105,7 @@ describe('item model', () => {
         quantity: 100,
         description: 'Box of 100',
         category: 'Hardware',
+        photoId: 'photo-1',
       });
       expect(item).toEqual({
         id: item.id,
@@ -106,6 +114,7 @@ describe('item model', () => {
         quantityOut: 0,
         description: 'Box of 100',
         category: 'Hardware',
+        photoId: 'photo-1',
       });
       expect(item.id).toBeTruthy();
     });
@@ -148,6 +157,21 @@ describe('item model', () => {
     it('agrees with isValidItemDraft', () => {
       expect(isValidItemDraft(draft)).toBe(true);
       expect(isValidItemDraft({ ...draft, quantity: -1 })).toBe(false);
+    });
+
+    it('creates an item without a photo when the draft has none', () => {
+      expect(createItem(draft).photoId).toBeNull();
+    });
+
+    it('accepts no photo (null) or a photo id that is a text, and nothing else', () => {
+      expect(isValidPhotoId(null)).toBe(true);
+      expect(isValidPhotoId('photo-1')).toBe(true);
+      for (const photoId of ['', undefined, 7, {}, ['photo-1']]) {
+        expect(isValidPhotoId(photoId)).toBe(false);
+        const withPhoto = { ...draft, photoId } as ItemDraft;
+        expect(isValidItemDraft(withPhoto)).toBe(false);
+        expect(() => createItem(withPhoto)).toThrow();
+      }
     });
   });
 
