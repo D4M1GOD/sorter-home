@@ -11,6 +11,7 @@ import {
   ItemDraft,
   markUsedFromInside,
   markUsedFromOut,
+  nextItemName,
   parseItemQuantity,
   parseUnits,
   putBack,
@@ -326,6 +327,93 @@ describe('item model', () => {
       const items = named('B', 'A');
       sortItemsByName(items);
       expect(items.map((item) => item.name)).toEqual(['B', 'A']);
+    });
+
+    describe('natural order: the numbers inside a name are compared by value', () => {
+      const sortedNames = (...names: string[]) =>
+        sortItemsByName(named(...names)).map((item) => item.name);
+
+      it('puts "Item 2" before "Item 10"', () => {
+        expect(sortedNames('Item 10', 'Item 2', 'Item 1', 'Item 11')).toEqual([
+          'Item 1',
+          'Item 2',
+          'Item 10',
+          'Item 11',
+        ]);
+      });
+
+      it('does it for any name, not only "Item"', () => {
+        expect(sortedNames('Nails 10', 'Nails 2', 'Nails')).toEqual(['Nails', 'Nails 2', 'Nails 10']);
+      });
+
+      it('still ignores upper/lower case', () => {
+        expect(sortedNames('item 10', 'ITEM 2', 'Item 1')).toEqual(['Item 1', 'ITEM 2', 'item 10']);
+      });
+
+      it('compares every number of a name in turn', () => {
+        expect(sortedNames('Box 10 Shelf 1', 'Box 2 Shelf 10', 'Box 2 Shelf 9')).toEqual([
+          'Box 2 Shelf 9',
+          'Box 2 Shelf 10',
+          'Box 10 Shelf 1',
+        ]);
+      });
+
+      it('still puts the other names in alphabetical order around the numbered ones', () => {
+        expect(sortedNames('Nails', 'Item 10', 'Hammer', 'Item 2')).toEqual([
+          'Hammer',
+          'Item 2',
+          'Item 10',
+          'Nails',
+        ]);
+      });
+
+      it('keeps the order they were added in for names that have the same number', () => {
+        const items = named('Item 2', 'Item 02', 'Item 2');
+        expect(sortItemsByName(items).map((item) => item.id)).toEqual(['id-0', 'id-1', 'id-2']);
+      });
+    });
+  });
+
+  describe('nextItemName', () => {
+    const itemsNamed = (...names: string[]) => names.map((name) => ({ name }));
+
+    it('starts with "Item 1" in a container without items', () => {
+      expect(nextItemName([])).toBe('Item 1');
+    });
+
+    it('takes the lowest number that is not used, filling the gaps', () => {
+      expect(nextItemName(itemsNamed('Item 1', 'Item 3'))).toBe('Item 2');
+      expect(nextItemName(itemsNamed('Item 2', 'Item 3'))).toBe('Item 1');
+      expect(nextItemName(itemsNamed('Item 1', 'Item 2', 'Item 3'))).toBe('Item 4');
+    });
+
+    it('works with numbers of more than one digit', () => {
+      const twelve = Array.from({ length: 12 }, (_, index) => `Item ${index + 1}`);
+      expect(nextItemName(itemsNamed(...twelve))).toBe('Item 13');
+      expect(nextItemName(itemsNamed(...twelve.filter((name) => name !== 'Item 10')))).toBe('Item 10');
+    });
+
+    it('only counts the names that are exactly "Item N"', () => {
+      expect(
+        nextItemName(itemsNamed('Nails', 'Item', 'Item 1a', 'Item 01', 'Item  1', 'My Item 1', 'Item 1 ')),
+      ).toBe('Item 1');
+    });
+
+    it('ignores upper/lower case: a renamed "item 1" still counts as used', () => {
+      expect(nextItemName(itemsNamed('item 1', 'ITEM 2'))).toBe('Item 3');
+    });
+
+    it('counts the names it gave before, so a batch gets one number after another', () => {
+      const items: { name: string }[] = [];
+      for (let i = 0; i < 5; i++) {
+        items.push({ name: nextItemName(items) });
+      }
+      expect(items.map((item) => item.name)).toEqual(['Item 1', 'Item 2', 'Item 3', 'Item 4', 'Item 5']);
+    });
+
+    it('gives names that are valid for an item', () => {
+      const many = Array.from({ length: 9999 }, (_, index) => `Item ${index + 1}`);
+      expect(isValidItemName(nextItemName(itemsNamed(...many)))).toBe(true);
     });
   });
 });

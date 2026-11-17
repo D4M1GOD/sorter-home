@@ -52,10 +52,46 @@
         (closed)="closeItemForm()"
       />
     } @else {
-      <button #addItemButton class="button" type="button" (click)="openItemForm()">Add item</button>
+      <div class="actions">
+        <button #addItemButton class="button" type="button" (click)="openItemForm()">Add item</button>
+        <!-- Not disabled while a batch runs, so it keeps the focus: it only ignores the click. -->
+        <button
+          #batchButton
+          class="button"
+          type="button"
+          aria-describedby="batch-hint"
+          [attr.aria-disabled]="batchRunning() ? 'true' : null"
+          (click)="choosePhotos()"
+        >
+          Add several photos
+        </button>
+      </div>
+      <!-- Read with the button (aria-describedby). It goes away with the buttons, when the form opens. -->
+      <p id="batch-hint" class="batch-hint">{{ batchHint }}</p>
     }
+    <!-- The real file field is hidden: "Add several photos" opens it. Several files, no "capture"
+         (with "capture" the browser only takes one photo). -->
+    <input
+      #batchInput
+      type="file"
+      accept="image/*"
+      multiple
+      hidden
+      tabindex="-1"
+      aria-hidden="true"
+      (change)="onPhotosChosen($event)"
+    />
     <!-- Always in the page, empty when there is nothing to say, so screen readers announce changes. -->
-    <p class="item-notice" role="status">{{ itemNotice() }}</p>
+    <div class="item-notice" role="status">
+      {{ statusText() }}
+      @if (batchFailures().length > 0) {
+        <ul class="batch-failures">
+          @for (failure of batchFailures(); track $index) {
+            <li>{{ failure }}</li>
+          }
+        </ul>
+      }
+    </div>
     <app-item-list
       [items]="container().items"
       [editingId]="editingItemId()"
