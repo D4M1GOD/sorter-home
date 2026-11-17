@@ -1,6 +1,8 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { vi } from 'vitest';
 import { Item } from '../core/item.model';
+import { PhotoStore } from '../core/photo-store';
+import { FakePhotoStore, ObjectUrls, settle, stubObjectUrls } from '../core/photo-store.testing';
 import { ItemList } from './item-list';
 
 describe('ItemList', () => {
@@ -12,6 +14,7 @@ describe('ItemList', () => {
       quantityOut: 0,
       description: '',
       category: '',
+      photoId: null,
       ...values,
     };
   }
@@ -73,7 +76,8 @@ describe('ItemList', () => {
     const { element } = await setup([item('Nails')]);
     expect(element.querySelector('.item-category')).toBeNull();
     expect(element.querySelector('.item-description')).toBeNull();
-    expect(rows(element)[0].textContent?.replace(/\s+/g, ' ').trim()).toBe('Nails Qty 1');
+    const text = rows(element)[0].querySelector('.item-text')?.textContent;
+    expect(text?.replace(/\s+/g, ' ').trim()).toBe('Nails Qty 1');
   });
 
   it('shows two items with the same name as two rows', async () => {
@@ -119,16 +123,24 @@ describe('ItemList', () => {
     it('has a "Take out", an "Edit" and a "Delete" button in each row, named with the item name', async () => {
       const { element } = await setup([item('Nails'), item('Hammer')]);
       expect(buttonLabels(rows(element)[0])).toEqual([
+        'Add photo to Hammer',
         'Take out Hammer',
         'Edit Hammer',
         'Delete Hammer',
       ]);
-      expect(buttonLabels(rows(element)[1])).toEqual(['Take out Nails', 'Edit Nails', 'Delete Nails']);
+      expect(buttonLabels(rows(element)[1])).toEqual([
+        'Add photo to Nails',
+        'Take out Nails',
+        'Edit Nails',
+        'Delete Nails',
+      ]);
     });
 
-    it('gives each button a tooltip with the same text, and type "button"', async () => {
+    it('gives each icon button a tooltip with the same text, and type "button"', async () => {
       const { element } = await setup([item('Hammer')]);
-      for (const button of Array.from(rows(element)[0].querySelectorAll('button'))) {
+      for (const button of Array.from(
+        rows(element)[0].querySelectorAll<HTMLButtonElement>('.icon-button'),
+      )) {
         expect(button.getAttribute('title')).toBe(button.getAttribute('aria-label'));
         expect(button.type).toBe('button');
       }
@@ -182,6 +194,7 @@ describe('ItemList', () => {
       ]);
       const spies = outputs(fixture);
       expect(buttonLabels(rows(element)[1])).toEqual([
+        'Add photo to Cable',
         'Take out Cable',
         'Edit Cable',
         'Delete Cable',
@@ -239,6 +252,7 @@ describe('ItemList', () => {
         quantity: 100,
         description: '',
         category: 'Hardware',
+        photoId: null,
       });
     });
 
@@ -344,7 +358,12 @@ describe('ItemList', () => {
       const row = rows(element)[0];
       expect(text(row, '.item-quantity')).toBe('Qty 100');
       expect(row.querySelector('.item-out')).toBeNull();
-      expect(buttonNames(row)).toEqual(['Take out Nails', 'Edit Nails', 'Delete Nails']);
+      expect(buttonNames(row)).toEqual([
+        'Add photo to Nails',
+        'Take out Nails',
+        'Edit Nails',
+        'Delete Nails',
+      ]);
     });
 
     it('some out: shows "Qty 100" and "20 of 100 out", with all the buttons', async () => {
@@ -355,6 +374,7 @@ describe('ItemList', () => {
       expect(buttonNames(row)).toEqual([
         'Put back Nails',
         'Used Nails',
+        'Add photo to Nails',
         'Take out Nails',
         'Edit Nails',
         'Delete Nails',
@@ -370,6 +390,7 @@ describe('ItemList', () => {
       expect(buttonNames(row)).toEqual([
         'Put back Lights',
         'Used Lights',
+        'Add photo to Lights',
         'Edit Lights',
         'Delete Lights',
       ]);
@@ -380,7 +401,7 @@ describe('ItemList', () => {
       const row = rows(element)[0];
       expect(text(row, '.item-quantity')).toBe('None left');
       expect(row.querySelector('.item-out')).toBeNull();
-      expect(buttonNames(row)).toEqual(['Edit Nails', 'Delete Nails']);
+      expect(buttonNames(row)).toEqual(['Add photo to Nails', 'Edit Nails', 'Delete Nails']);
     });
 
     it('"Put back" and "Used" are text buttons, below the "out" line and above the icons', async () => {
@@ -515,6 +536,174 @@ describe('ItemList', () => {
       expect(text(rows(element)[0], '.confirm span')).toBe(
         'Delete "Nails"? 20 of 100 are out of the container. This cannot be undone.',
       );
+    });
+  });
+
+  describe('photos', () => {
+    let photos: FakePhotoStore;
+    let urls: ObjectUrls;
+
+    beforeEach(() => {
+      photos = new FakePhotoStore();
+      photos.add('p-hammer');
+      urls = stubObjectUrls();
+      TestBed.configureTestingModule({ providers: [{ provide: PhotoStore, useValue: photos }] });
+    });
+
+    afterEach(() => {
+      urls.restore();
+      document.body.replaceChildren();
+    });
+
+    /** "Hammer" has a photo and "Nails" has none. The rows are shown as Hammer, Nails. */
+    async function setupPhotos(hammerPhotoId = 'p-hammer') {
+      const result = await setup([item('Nails'), item('Hammer', { photoId: hammerPhotoId })]);
+      await settle();
+      result.fixture.detectChanges();
+      const photoAddRequested = vi.fn();
+      const photoOpened = vi.fn();
+      result.fixture.componentInstance.photoAddRequested.subscribe(photoAddRequested);
+      result.fixture.componentInstance.photoOpened.subscribe(photoOpened);
+      const [hammer, nails] = rows(result.element);
+      return { ...result, hammer, nails, photoAddRequested, photoOpened };
+    }
+
+    function names(row: HTMLElement): (string | null)[] {
+      return Array.from(row.querySelectorAll('button')).map((b) => b.getAttribute('aria-label'));
+    }
+
+    it('shows the thumbnail of an item with a photo, on the left of its text', async () => {
+      const { hammer } = await setupPhotos();
+      const thumbnail = hammer.querySelector('.item-main app-item-photo') as HTMLElement;
+      const text = hammer.querySelector('.item-main .item-text') as HTMLElement;
+      expect(thumbnail.compareDocumentPosition(text) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      expect(text.querySelector('.item-name')?.textContent?.trim()).toBe('Hammer');
+      expect(thumbnail.querySelector('img')?.getAttribute('src')).toBe(urls.created[0]);
+    });
+
+    it('names the thumbnail button with the item, and does not offer "Add photo" for it', async () => {
+      const { hammer } = await setupPhotos();
+      expect(names(hammer)).toEqual([
+        'View photo of Hammer',
+        'Take out Hammer',
+        'Edit Hammer',
+        'Delete Hammer',
+      ]);
+      expect(hammer.querySelector('.item-add-photo')).toBeNull();
+    });
+
+    it('offers the text button "Add photo" for an item without a photo, and no thumbnail', async () => {
+      const { nails } = await setupPhotos();
+      const add = nails.querySelector('.item-add-photo') as HTMLButtonElement;
+      expect(add.textContent?.trim()).toBe('Add photo');
+      expect(add.getAttribute('aria-label')).toBe('Add photo to Nails');
+      expect(add.type).toBe('button');
+      expect(nails.querySelector('app-item-photo')).toBeNull();
+    });
+
+    it('puts "Add photo" in its own line, below the text and above the icon buttons', async () => {
+      const result = await setup([item('Nails', { quantity: 100, quantityOut: 20 })]);
+      const row = rows(result.element)[0];
+      const parts = [
+        row.querySelector('.item-text'),
+        row.querySelector('.item-out-actions'),
+        row.querySelector('.item-photo-actions'),
+        row.querySelector('.item-actions'),
+      ] as Element[];
+      for (let i = 0; i < parts.length - 1; i++) {
+        expect(
+          parts[i].compareDocumentPosition(parts[i + 1]) & Node.DOCUMENT_POSITION_FOLLOWING,
+        ).toBeTruthy();
+      }
+      expect(row.querySelector('.item-actions .item-add-photo')).toBeNull();
+    });
+
+    it('emits the id of the item when "Add photo" or the thumbnail is pressed, and changes nothing', async () => {
+      const { fixture, element, hammer, nails, photoAddRequested, photoOpened } =
+        await setupPhotos();
+      (nails.querySelector('.item-add-photo') as HTMLButtonElement).click();
+      expect(photoAddRequested).toHaveBeenCalledWith('id-Nails');
+      (hammer.querySelector('.item-photo') as HTMLButtonElement).click();
+      expect(photoOpened).toHaveBeenCalledWith('id-Hammer');
+      fixture.detectChanges();
+      expect(element.querySelector('app-item-form')).toBeNull();
+    });
+
+    it('shows a row whose photo does not exist any more as a row without a photo', async () => {
+      const { hammer } = await setupPhotos('p-lost');
+      expect(hammer.querySelector('app-item-photo')).toBeNull();
+      expect(names(hammer)).toEqual([
+        'Add photo to Hammer',
+        'Take out Hammer',
+        'Edit Hammer',
+        'Delete Hammer',
+      ]);
+    });
+
+    it('keeps the thumbnail while the delete confirmation or the units form is open', async () => {
+      const { fixture, element } = await setupPhotos();
+      fixture.componentRef.setInput('deletingId', 'id-Hammer');
+      fixture.detectChanges();
+      expect(rows(element)[0].querySelector('app-item-photo')).not.toBeNull();
+      fixture.componentRef.setInput('deletingId', null);
+      fixture.componentRef.setInput('unitsAction', { itemId: 'id-Hammer', mode: 'take-out' });
+      fixture.detectChanges();
+      expect(rows(element)[0].querySelector('app-item-photo')).not.toBeNull();
+      expect(rows(element)[1].querySelector('.item-add-photo')).not.toBeNull();
+    });
+
+    it('hides "Add photo" of a row while its delete confirmation or its units form is open', async () => {
+      const { fixture, element } = await setupPhotos();
+      fixture.componentRef.setInput('deletingId', 'id-Nails');
+      fixture.detectChanges();
+      expect(rows(element)[1].querySelector('.item-add-photo')).toBeNull();
+    });
+
+    it('revokes the address of a thumbnail when its row is removed', async () => {
+      const { fixture } = await setupPhotos();
+      expect(urls.alive().length).toBe(1);
+      fixture.componentRef.setInput('items', [item('Nails')]);
+      fixture.detectChanges();
+      expect(urls.alive()).toEqual([]);
+    });
+
+    it('revokes the address of the thumbnail while the row shows the edit form', async () => {
+      const { fixture } = await setupPhotos();
+      const thumbnail = urls.created[0];
+      fixture.componentRef.setInput('editingId', 'id-Hammer');
+      fixture.detectChanges();
+      expect(urls.revoked).toContain(thumbnail);
+    });
+
+    describe('the edit form', () => {
+      async function setupEditing(editFocus: 'name' | 'photo') {
+        const result = await setup([item('Nails')]);
+        document.body.appendChild(result.fixture.nativeElement);
+        result.fixture.componentRef.setInput('editFocus', editFocus);
+        result.fixture.componentRef.setInput('editingId', 'id-Nails');
+        result.fixture.detectChanges();
+        await result.fixture.whenStable();
+        return result;
+      }
+
+      it('opens with the focus on the name by default', async () => {
+        const { element } = await setupEditing('name');
+        expect(document.activeElement).toBe(element.querySelector('#item-name'));
+      });
+
+      it('opens with the focus on the photo field when it was asked for', async () => {
+        const { element } = await setupEditing('photo');
+        expect(document.activeElement).toBe(element.querySelector('app-item-form .photo-add'));
+      });
+    });
+
+    it('focusControl puts the focus on "Add photo" and on the thumbnail', async () => {
+      const { fixture, hammer, nails } = await setupPhotos();
+      document.body.appendChild(fixture.nativeElement);
+      fixture.componentInstance.focusControl('id-Nails', 'add-photo');
+      expect(document.activeElement).toBe(nails.querySelector('.item-add-photo'));
+      fixture.componentInstance.focusControl('id-Hammer', 'photo');
+      expect(document.activeElement).toBe(hammer.querySelector('button.item-photo'));
     });
   });
 

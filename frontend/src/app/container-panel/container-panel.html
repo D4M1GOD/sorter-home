@@ -61,6 +61,9 @@
       [editingId]="editingItemId()"
       [deletingId]="deletingItemId()"
       [unitsAction]="itemUnitsAction()"
+      [editFocus]="itemEditFocus()"
+      (photoAddRequested)="startItemPhoto($event)"
+      (photoOpened)="openItemPhoto($event)"
       (unitsRequested)="startItemUnits($event)"
       (unitsSubmitted)="submitItemUnits($event)"
       (unitsCancelled)="cancelItemUnits()"
@@ -72,6 +75,14 @@
       (deleteConfirmed)="confirmItemDelete($event)"
       (deleteCancelled)="cancelItemDelete()"
     />
+    @if (viewedPhoto(); as viewed) {
+      <!-- The full photo, in a window over the page. It is here only while it is open. -->
+      <app-photo-viewer
+        [photoId]="viewed.photoId"
+        [name]="viewed.name"
+        (closed)="closeItemPhoto()"
+      />
+    }
   </section>
 
   @if (confirming()) {

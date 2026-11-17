@@ -18,6 +18,23 @@
   border-top: 1px solid #e5e7eb;
 }
 
+// The thumbnail (when there is one) on the left and the text of the row taking the rest.
+.item-main {
+  display: flex;
+  gap: 0.5rem;
+  align-items: flex-start;
+}
+
+.item-text {
+  flex: 1;
+  min-width: 0;
+}
+
+// "Add photo", in its own line above the icon buttons.
+.item-photo-actions {
+  margin-top: 0.5rem;
+}
+
 // The name on the left and the quantity on the right. A long name wraps and the quantity stays whole.
 .item-head {
   display: flex;

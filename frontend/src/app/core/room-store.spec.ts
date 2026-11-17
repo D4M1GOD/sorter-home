@@ -930,7 +930,14 @@ describe('RoomStore items', () => {
   }
 
   function item(name: string, values: Partial<ItemDraft> = {}): Item {
-    return createItem({ name, quantity: 1, description: '', category: '', ...values });
+    return createItem({
+      name,
+      quantity: 1,
+      description: '',
+      category: '',
+      photoId: null,
+      ...values,
+    });
   }
 
   function itemsOf(store: RoomStore, roomId: string, containerId: string): Item[] {
@@ -980,6 +987,7 @@ describe('RoomStore items', () => {
         quantityOut: 2,
         description: ' Line 1\nLine 2 ',
         category: '  Power   tools ',
+        photoId: 'photo-1',
       };
       expect(store.addItem(room.id, toys.id, raw)).toBe(true);
       expect(itemsOf(store, room.id, toys.id)).toEqual([
@@ -990,6 +998,7 @@ describe('RoomStore items', () => {
           quantityOut: 2,
           description: 'Line 1\nLine 2',
           category: 'Power tools',
+          photoId: 'photo-1',
         },
       ]);
     });
@@ -1196,6 +1205,7 @@ describe('RoomStore items', () => {
         quantity: 7,
         description: 'USB-C\n2 m',
         category: 'Electronics',
+        photoId: 'photo-1',
       };
       expect(store.updateItem(room.id, toys.id, cables.id, draft)).toBe(true);
       expect(itemsOf(store, room.id, toys.id)[1]).toEqual({
@@ -1230,6 +1240,7 @@ describe('RoomStore items', () => {
         quantity: 2,
         description: ' Line 1\nLine 2 ',
         category: '  Power   tools ',
+        photoId: null,
       });
       expect(itemsOf(store, room.id, toys.id)[1]).toEqual({
         id: cables.id,
@@ -1238,6 +1249,7 @@ describe('RoomStore items', () => {
         quantityOut: 0,
         description: 'Line 1\nLine 2',
         category: 'Power tools',
+        photoId: null,
       });
     });
 
@@ -1698,6 +1710,7 @@ describe('RoomStore items', () => {
       quantityOut: 20,
       description: 'Box of 100\n2 in',
       category: 'Hardware',
+      photoId: 'photo-1',
     };
 
     /** Saves one room with one container that has `items`, and returns what a new store loads. */
@@ -1744,6 +1757,7 @@ describe('RoomStore items', () => {
         quantityOut: 0,
         description: '',
         category: '',
+        photoId: null,
       };
       expect(load([goodItem, second]).items).toEqual([goodItem, second]);
     });
@@ -1841,9 +1855,88 @@ describe('RoomStore items', () => {
         { ...goodItem, id: 'b', description: 7, category: ['Hardware'] },
       ]);
       expect(items).toEqual([
-        { id: 'a', name: 'Nails', quantity: 1, quantityOut: 0, description: '', category: '' },
-        { id: 'b', name: 'Nails', quantity: 100, quantityOut: 20, description: '', category: '' },
+        {
+          id: 'a',
+          name: 'Nails',
+          quantity: 1,
+          quantityOut: 0,
+          description: '',
+          category: '',
+          photoId: null,
+        },
+        {
+          id: 'b',
+          name: 'Nails',
+          quantity: 100,
+          quantityOut: 20,
+          description: '',
+          category: '',
+          photoId: 'photo-1',
+        },
       ]);
+    });
+
+    describe('photo id', () => {
+      it('loads an item saved before photos existed without a photo', () => {
+        const { photoId: _photoId, ...old } = goodItem;
+        expect(load([old]).items).toEqual([{ ...goodItem, photoId: null }]);
+      });
+
+      it('keeps a photo id that is a text, without checking that the photo exists', () => {
+        expect(load([goodItem]).items?.[0].photoId).toBe('photo-1');
+      });
+
+      it('uses no photo when the saved photo id is not a text that can be used, and keeps the item', () => {
+        const { items } = load([
+          { ...goodItem, id: 'a', photoId: '' },
+          { ...goodItem, id: 'b', photoId: 7 },
+          { ...goodItem, id: 'c', photoId: { id: 'photo-1' } },
+          { ...goodItem, id: 'd', photoId: undefined },
+        ]);
+        expect(items?.map((i) => [i.id, i.photoId])).toEqual([
+          ['a', null],
+          ['b', null],
+          ['c', null],
+          ['d', null],
+        ]);
+      });
+    });
+
+    describe('loadedOk', () => {
+      function loadedOk(saved: string | null): boolean {
+        localStorage.clear();
+        if (saved !== null) {
+          localStorage.setItem(ROOMS_STORAGE_KEY, saved);
+        }
+        return new RoomStore().loadedOk;
+      }
+
+      it('is true when nothing was saved yet, and when a list was saved', () => {
+        expect(loadedOk(null)).toBe(true);
+        expect(loadedOk('[]')).toBe(true);
+        expect(loadedOk(JSON.stringify([createRoom('Garage')]))).toBe(true);
+      });
+
+      it('is true when only some entries of the list are bad: they are discarded', () => {
+        expect(loadedOk(JSON.stringify([createRoom('Garage'), null, 'x']))).toBe(true);
+      });
+
+      it('is false when what was saved cannot be read as a list of rooms', () => {
+        expect(loadedOk('{ not json')).toBe(false);
+        expect(loadedOk('{"rooms":[]}')).toBe(false);
+        expect(loadedOk('"text"')).toBe(false);
+      });
+
+      it('is false when the browser storage cannot be read', () => {
+        const getItem = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+          throw new Error('blocked');
+        });
+        try {
+          expect(new RoomStore().loadedOk).toBe(false);
+        } finally {
+          getItem.mockRestore();
+        }
+      });
     });
 
     describe('units out', () => {

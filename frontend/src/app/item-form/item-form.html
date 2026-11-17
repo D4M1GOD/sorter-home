@@ -86,6 +86,80 @@
     </datalist>
   </div>
 
+  <div class="field" role="group" aria-labelledby="item-photo-label">
+    <span id="item-photo-label" class="field-label">Photo (optional)</span>
+    <!-- The real file field is hidden: the buttons below open it. No "capture": a phone offers
+         its file picker (the gallery), and a computer opens the file picker. -->
+    <input
+      #photoInput
+      class="photo-input"
+      type="file"
+      accept="image/*"
+      hidden
+      tabindex="-1"
+      aria-hidden="true"
+      (change)="onPhotoChosen($event)"
+    />
+    @if (touchScreen.coarse()) {
+      <!-- Only on touch screens: with "capture" a phone opens its camera. Same handler as above. -->
+      <input
+        #cameraInput
+        class="photo-input"
+        type="file"
+        accept="image/*"
+        capture="environment"
+        hidden
+        tabindex="-1"
+        aria-hidden="true"
+        (change)="onPhotoChosen($event)"
+      />
+    }
+    @if (hasPhoto()) {
+      <div class="photo-preview">
+        @if (previewUrl(); as url) {
+          <img [src]="url" alt="Photo preview" />
+        }
+      </div>
+      <div class="actions">
+        <button
+          class="button photo-replace"
+          type="button"
+          aria-label="Replace photo"
+          (click)="choosePhoto('replace')"
+        >
+          Replace
+        </button>
+        @if (touchScreen.coarse()) {
+          <button class="button photo-camera" type="button" (click)="takePhoto()">Take photo</button>
+        }
+        <button
+          class="button photo-remove"
+          type="button"
+          aria-label="Remove photo"
+          (click)="removePhoto()"
+        >
+          Remove
+        </button>
+      </div>
+    } @else {
+      <div class="actions">
+        <button class="button photo-add" type="button" (click)="choosePhoto('add')">
+          Add photo
+        </button>
+        @if (touchScreen.coarse()) {
+          <button class="button photo-camera" type="button" (click)="takePhoto()">Take photo</button>
+        }
+      </div>
+    }
+    <!-- Always in the page, empty when there is nothing to say, so screen readers announce changes. -->
+    <p class="photo-status" role="status">{{ preparingPhoto() ? 'Preparing photo…' : '' }}</p>
+    <div id="item-photo-status" role="alert">
+      @if (photoError()) {
+        <p class="field-error">{{ photoError() }}</p>
+      }
+    </div>
+  </div>
+
   <div class="actions">
     <button class="button button--primary" type="submit">{{ editing() ? 'Save' : 'Add' }}</button>
     <button class="button" type="button" (click)="closed.emit()">

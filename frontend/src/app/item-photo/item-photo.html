@@ -1,0 +1,12 @@
+<!-- The button has the name; the image inside is decoration for screen readers (alt=""). -->
+<button
+  class="item-photo"
+  type="button"
+  [attr.aria-label]="'View photo of ' + name()"
+  [attr.title]="'View photo of ' + name()"
+  (click)="opened.emit()"
+>
+  @if (photo().url; as url) {
+    <img [src]="url" alt="" />
+  }
+</button>

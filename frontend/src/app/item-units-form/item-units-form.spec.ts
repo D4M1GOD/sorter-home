@@ -12,6 +12,7 @@ describe('ItemUnitsForm', () => {
     quantityOut: 20,
     description: '',
     category: '',
+    photoId: null,
   };
 
   async function setup(mode: ItemUnitsMode, item: Item = nails) {

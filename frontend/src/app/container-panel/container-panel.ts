@@ -28,6 +28,7 @@ import {
 import { ItemForm } from '../item-form/item-form';
 import { ItemList, ItemRowControl, ItemUnitsRequested } from '../item-list/item-list';
 import { ItemUnitsMode, ItemUnitsSubmitted } from '../item-units-form/item-units-form';
+import { PhotoViewer } from '../photo-viewer/photo-viewer';
 
 /** The new values of an item the user edited, and the id of that item. */
 export interface ItemEdited {
@@ -39,9 +40,18 @@ export interface ItemEdited {
 type ItemAction =
   | { kind: 'none' }
   | { kind: 'adding' }
-  | { kind: 'editing'; itemId: string }
+  // `opener` is the button of the row that opened the edit form: "Edit", or "Add photo" (then
+  // the form opens with the focus on its photo field).
+  | { kind: 'editing'; itemId: string; opener: 'edit' | 'add-photo' }
   | { kind: 'deleting'; itemId: string }
   | { kind: 'units'; itemId: string; mode: ItemUnitsMode };
+
+/** The photo shown in the photo window, and the item it belongs to. */
+interface ViewedPhoto {
+  itemId: string;
+  photoId: string;
+  name: string;
+}
 
 /** The action the user chose for some units of an item, and the id of that item. */
 export interface ItemUnitsChanged extends ItemUnitsSubmitted {
@@ -74,7 +84,7 @@ function controlAfterUnits(mode: ItemUnitsMode, after: Item): ItemRowControl {
  */
 @Component({
   selector: 'app-container-panel',
-  imports: [ContainerStack, FormField, ItemForm, ItemList],
+  imports: [ContainerStack, FormField, ItemForm, ItemList, PhotoViewer],
   templateUrl: './container-panel.html',
   styleUrl: './container-panel.scss',
 })
@@ -171,6 +181,22 @@ export class ContainerPanel {
     return action.kind === 'deleting' ? action.itemId : null;
   });
 
+  /** The field of the edit form that takes the focus: the photo when "Add photo" opened it. */
+  protected readonly itemEditFocus = computed(() => {
+    const action = this.itemAction();
+    return action.kind === 'editing' && action.opener === 'add-photo' ? 'photo' : 'name';
+  });
+
+  /**
+   * The photo shown in the photo window, or null when it is closed. The window is modal: while
+   * it is open nothing else can be used, so it is not one of the item actions and it does not
+   * close a form that is open. It closes when another container is selected.
+   */
+  protected readonly viewedPhoto = linkedSignal<string, ViewedPhoto | null>({
+    source: this.containerId,
+    computation: () => null,
+  });
+
   /** The row that shows the take out, put back or used form, and which of the three, or null. */
   protected readonly itemUnitsAction = computed<ItemUnitsRequested | null>(() => {
     const action = this.itemAction();
@@ -207,8 +233,34 @@ export class ContainerPanel {
 
   /** Opens the edit form in the row of the item. The form puts the focus on its name field. */
   protected startItemEdit(itemId: string): void {
-    this.itemAction.set({ kind: 'editing', itemId });
+    this.itemAction.set({ kind: 'editing', itemId, opener: 'edit' });
     this.itemNotice.set('');
+  }
+
+  /**
+   * "Add photo" of a row: opens the same edit form, with the focus on its photo field. The
+   * photo is added there, and nothing is saved until "Save".
+   */
+  protected startItemPhoto(itemId: string): void {
+    this.itemAction.set({ kind: 'editing', itemId, opener: 'add-photo' });
+    this.itemNotice.set('');
+  }
+
+  /** Opens the photo window with the full photo of the item. */
+  protected openItemPhoto(itemId: string): void {
+    const item = this.container().items.find((i) => i.id === itemId);
+    if (item && item.photoId !== null) {
+      this.viewedPhoto.set({ itemId, photoId: item.photoId, name: item.name });
+    }
+  }
+
+  /** Closes the photo window and gives the focus back to the thumbnail that opened it. */
+  protected closeItemPhoto(): void {
+    const viewed = this.viewedPhoto();
+    this.viewedPhoto.set(null);
+    if (viewed) {
+      this.focusAfterRender(() => this.itemList()?.focusControl(viewed.itemId, 'photo'));
+    }
   }
 
   /**
@@ -226,12 +278,15 @@ export class ContainerPanel {
     this.focusAfterRender(() => this.itemList()?.focusControl(itemId, 'edit'));
   }
 
-  /** Closes the edit form without saving and gives the focus back to the "Edit" button of the row. */
+  /**
+   * Closes the edit form without saving and gives the focus back to the button of the row that
+   * opened it: "Edit" or "Add photo".
+   */
   protected cancelItemEdit(): void {
-    const itemId = this.editingItemId();
+    const action = this.itemAction();
     this.itemAction.set(NO_ITEM_ACTION);
-    if (itemId !== null) {
-      this.focusAfterRender(() => this.itemList()?.focusControl(itemId, 'edit'));
+    if (action.kind === 'editing') {
+      this.focusAfterRender(() => this.itemList()?.focusControl(action.itemId, action.opener));
     }
   }
 
