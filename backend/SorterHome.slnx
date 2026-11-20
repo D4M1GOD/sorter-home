@@ -1,0 +1,6 @@
+<Solution>
+  <Project Path="SorterHome.Api/SorterHome.Api.csproj" />
+  <Project Path="SorterHome.Domain/SorterHome.Domain.csproj" />
+  <Project Path="SorterHome.Infrastructure/SorterHome.Infrastructure.csproj" />
+  <Project Path="SorterHome.Tests/SorterHome.Tests.csproj" />
+</Solution>

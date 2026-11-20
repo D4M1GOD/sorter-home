@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Database and photos (from step 5.2). It may use Domain, never Api. -->
+
+  <ItemGroup>
+    <ProjectReference Include="..\SorterHome.Domain\SorterHome.Domain.csproj" />
+  </ItemGroup>
+
+</Project>
