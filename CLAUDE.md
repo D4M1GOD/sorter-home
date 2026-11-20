@@ -36,7 +36,8 @@ Full requirements: @docs/requirements.md (read it before starting any task).
 
 ## Stack
 - Frontend: Angular + TypeScript, in `frontend/`
-- Backend: C# ASP.NET Core Web API on .NET 10, in `backend/`
+- Backend: C# ASP.NET Core Web API on .NET 10, in `backend/`: solution `SorterHome.slnx` with
+  `SorterHome.Api`, `SorterHome.Domain`, `SorterHome.Infrastructure` and `SorterHome.Tests`
 - Database: PostgreSQL (planned). Photos: Azure Blob Storage (planned).
 - CI: GitHub Actions (planned)
 
@@ -53,6 +54,7 @@ Full requirements: @docs/requirements.md (read it before starting any task).
 - Pure logic lives in `frontend/src/app/core/` with unit tests.
 - A UI state must never rely on color alone.
 - Angular conventions for the frontend are in `frontend/CLAUDE.md`.
+- Backend conventions are in `backend/CLAUDE.md`.
 
 ## Commands
 Frontend (run from `frontend/`):
@@ -60,4 +62,8 @@ Frontend (run from `frontend/`):
 - `ng test --watch=false`: run the unit tests once (Vitest)
 - `ng build`: production build
 
-Backend: not created yet.
+Backend (run from `backend/`):
+- `dotnet build`: build all the projects
+- `dotnet test`: run the backend tests (xUnit)
+- `dotnet run --project SorterHome.Api`: development server at http://localhost:5080; health at
+  `/api/health`, OpenAPI document at `/openapi/v1.json` (Development only)

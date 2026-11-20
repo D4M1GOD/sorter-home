@@ -1,4 +1,4 @@
-# SorterHome — Requirements (v0.18)
+# SorterHome — Requirements (v0.19)
 
 Last updated: 2026-11-20
 Status: Requirements for v1 are agreed. Items marked **Open** still need a decision from the project owner.
@@ -165,7 +165,7 @@ localStorage holds about 5 MB in total and one phone photo weighs 2 to 5 MB, so 
 ## 9. Development environment (confirmed)
 - OS: Windows; editor: Visual Studio Code (Visual Studio 2022 is also installed)
 - AI assistant: Claude (claude.ai Project + Claude Code in VS Code)
-- Installed tools: Git 2.56, Node.js 24.22, Angular CLI 22.2, .NET SDK 10.0 (LTS), Docker 29.9, Claude Code 2.1
+- Installed tools: Git 2.56, Node.js 24.22, Angular CLI 22.2, .NET SDK 10.0.404 (LTS, pinned in `backend/global.json`), Docker 29.9, Claude Code 2.1
 - Owner's experience: Angular, JavaScript, TypeScript; 6 months of professional work.
 
 ## 10. Technology stack
@@ -184,6 +184,7 @@ localStorage holds about 5 MB in total and one phone photo weighs 2 to 5 MB, so 
 ### Backend decisions
 - Everything is built and tested locally first (steps 5.1 to 5.6), then CI (5.7), then the deploy to Azure (5.8).
 - The backend is one program with three projects plus a test project: `Api` (controllers), `Domain` (pure rules, no dependencies) and `Infrastructure` (database and photos). Inside each project the code is organized in folders by feature (`Rooms`, `Containers`, `Items`), so a new feature is a new folder.
+- The projects are `SorterHome.Api`, `SorterHome.Domain`, `SorterHome.Infrastructure` and `SorterHome.Tests`, in the solution `backend/SorterHome.slnx`. Domain depends on nothing, Infrastructure depends on Domain, and Api depends on both. The endpoints are controllers (not Minimal API). The tests use xUnit v3 and test the endpoints with `WebApplicationFactory` (the whole API in memory). The API documentation is only the OpenAPI document that .NET generates, at `/openapi/v1.json`, only in the Development environment, with no graphic interface. `GET /api/health` answers 200 with `{"status":"Healthy"}` (or `"Degraded"`) and 503 with `{"status":"Unhealthy"}`; from step 5.2 it also checks the database.
 - The server validates the essential rules, which live in `Domain`: text limits, quantity from 0 to 9999, units out not higher than the quantity, lengths in whole millimeters, and a container inside its room. The geometry rules (overlaps, stacks, rotation) stay in the frontend until the optional step 5.9. The frontend keeps them in any case, to draw the shadow while dragging.
 - Two decisions are still open: **Open (step 5.2):** how the data records who owns it, to prepare for user accounts and shared households, and **Open (step 5.8):** how the API is protected while there are no accounts.
 
@@ -225,7 +226,7 @@ The room plan is drawn with SVG. Reasons: the plan has tens of objects (not thou
    - 3.5 Several photos at once, one item per photo — **done**
 4. Search and filters — **done**
 5. Backend and deploy to the internet with CI:
-   - 5.1 Backend skeleton in `backend/` (ASP.NET Core on .NET 10) with a health endpoint, and its test project
+   - 5.1 Backend skeleton in `backend/` (ASP.NET Core on .NET 10) with a health endpoint, and its test project — **done**
    - 5.2 PostgreSQL in Docker, tables and migrations (Entity Framework Core)
    - 5.3 API for rooms
    - 5.4 API for containers and items
