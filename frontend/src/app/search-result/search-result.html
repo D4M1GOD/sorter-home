@@ -1,0 +1,32 @@
+<div class="result">
+  @if (photoId(); as id) {
+    <app-item-photo
+      [photoId]="id"
+      [name]="result().item.name"
+      (opened)="photoOpened.emit()"
+      (missing)="onPhotoMissing($event)"
+    />
+  }
+  <div class="result-text">
+    <div class="result-head">
+      <!-- The name is the link: a link cannot have a button (the thumbnail) inside it. -->
+      <a
+        class="result-link"
+        [routerLink]="['/rooms', result().roomId]"
+        [queryParams]="target()"
+      >{{ result().item.name }}</a
+      >&ngsp;<span class="result-quantity" [class.result-out]="hasOut()">{{ quantity() }}</span>
+    </div>
+    @if (result().item.category) {
+      <p class="result-detail">Category: {{ result().item.category }}</p>
+    }
+    @if (result().item.description) {
+      <p class="result-detail result-description">{{ result().item.description }}</p>
+    }
+    <p class="result-location">
+      <!-- The arrows are for the eye. Screen readers get the same location with commas. -->
+      <span aria-hidden="true">{{ location() }}</span>
+      <span class="visually-hidden">{{ locationLabel() }}</span>
+    </p>
+  </div>
+</div>

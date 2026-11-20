@@ -728,6 +728,43 @@ describe('ItemList', () => {
   });
 
   describe('focusControl', () => {
+    describe('the row itself (the item of a search result)', () => {
+      async function setupRows() {
+        const result = await setup([item('Nails'), item('Hammer')]);
+        document.body.appendChild(result.fixture.nativeElement);
+        const [hammer, nails] = rows(result.element);
+        return { ...result, hammer, nails };
+      }
+
+      it('puts the focus on the row of the item', async () => {
+        const { fixture, nails } = await setupRows();
+        fixture.componentInstance.focusControl('id-Nails', 'row');
+        expect(document.activeElement).toBe(nails);
+      });
+
+      it('does not make the row a stop of the Tab key', async () => {
+        const { fixture, nails, hammer } = await setupRows();
+        expect(nails.hasAttribute('tabindex')).toBe(false);
+        fixture.componentInstance.focusControl('id-Nails', 'row');
+        expect(nails.getAttribute('tabindex')).toBe('-1');
+        expect(hammer.hasAttribute('tabindex')).toBe(false);
+      });
+
+      it('lets the row go back to how it was when the focus leaves it', async () => {
+        const { fixture, element, nails } = await setupRows();
+        fixture.componentInstance.focusControl('id-Nails', 'row');
+        (element.querySelector('button[aria-label="Edit Hammer"]') as HTMLButtonElement).focus();
+        expect(nails.hasAttribute('tabindex')).toBe(false);
+      });
+
+      it('does nothing for an item that is not in the list', async () => {
+        const { fixture } = await setupRows();
+        const before = document.activeElement;
+        fixture.componentInstance.focusControl('nope', 'row');
+        expect(document.activeElement).toBe(before);
+      });
+    });
+
     it('puts the focus on "Take out", "Put back" and "Used"', async () => {
       const { fixture, element } = await setup([item('Nails', { quantity: 100, quantityOut: 20 })]);
       document.body.appendChild(fixture.nativeElement);

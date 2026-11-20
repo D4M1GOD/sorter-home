@@ -1,7 +1,18 @@
-import { Component, computed, inject, linkedSignal, signal } from '@angular/core';
+import {
+  afterNextRender,
+  Component,
+  computed,
+  effect,
+  inject,
+  Injector,
+  linkedSignal,
+  signal,
+  untracked,
+  viewChild,
+} from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { apply, form, FormField, submit } from '@angular/forms/signals';
-import { ActivatedRoute, RouterLink } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { map } from 'rxjs';
 import {
   ContainerPanel,
@@ -24,6 +35,8 @@ import {
 
 const NOT_ENOUGH_SPACE_TO_ROTATE = 'Not enough space to rotate';
 const NO_FREE_SPACE = 'There is no free space for another container in this room.';
+const CONTAINER_GONE = 'That container no longer exists.';
+const ITEM_GONE = 'That item no longer exists.';
 
 /** True when the key press goes to something the user types in: the R key must not rotate then. */
 function isTypingTarget(target: EventTarget | null): boolean {
@@ -90,6 +103,64 @@ export class RoomDetail {
     source: () => this.selectedId(),
     computation: () => '',
   });
+
+  /**
+   * What to tell the user who followed a search result whose container or item is gone. It is
+   * cleared when a container is selected, and when another room is opened.
+   */
+  protected readonly targetNotice = linkedSignal<string | null, string>({
+    source: () => this.selectedId(),
+    computation: () => '',
+  });
+
+  private readonly router = inject(Router);
+  private readonly injector = inject(Injector);
+  private readonly panel = viewChild(ContainerPanel);
+  private readonly queryParams = toSignal(this.route.queryParamMap, { requireSync: true });
+
+  constructor() {
+    // A search result links to /rooms/<id>?container=<id>&item=<id>. They are read once.
+    effect(() => {
+      const params = this.queryParams();
+      const containerId = params.get('container');
+      if (containerId !== null) {
+        untracked(() => this.openTarget(containerId, params.get('item')));
+      }
+    });
+  }
+
+  /**
+   * Selects the container of a search result and puts the focus on the row of its item. A
+   * container in the middle of a stack is selected like any other: the plan marks its stack and
+   * the panel shows it in the stack list. If the container or the item no longer exists (it was
+   * deleted in another tab, or the link is old) the page says so. Then the two parameters are
+   * taken out of the address, replacing the entry of the history: the address does not go stale
+   * when the user selects something else, and "back" still returns to the search.
+   */
+  private openTarget(containerId: string, itemId: string | null): void {
+    const container = this.room()?.containers.find((c) => c.id === containerId);
+    if (this.room() && !container) {
+      this.selectedId.set(null);
+      this.targetNotice.set(CONTAINER_GONE);
+    } else if (container) {
+      // The selection first: selecting clears the notice.
+      this.selectedId.set(container.id);
+      if (itemId !== null) {
+        if (container.items.some((item) => item.id === itemId)) {
+          // The panel of the container is drawn in the next render: its row exists then.
+          afterNextRender(() => this.panel()?.focusItemRow(itemId), { injector: this.injector });
+        } else {
+          this.targetNotice.set(ITEM_GONE);
+        }
+      }
+    }
+    void this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams: { container: null, item: null },
+      queryParamsHandling: 'merge',
+      replaceUrl: true,
+    });
+  }
 
   /** Saves the final size when the user releases a resize handle on the plan. */
   protected onResize(size: RoomSize): void {

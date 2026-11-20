@@ -1,6 +1,13 @@
 import { Component, computed, ElementRef, inject, input, output, signal } from '@angular/core';
 import { itemDeleteQuestion } from '../core/delete-question';
-import { Item, ItemDraft, sortItemsByName, unitsInside } from '../core/item.model';
+import {
+  Item,
+  ItemDraft,
+  itemOutText,
+  itemQuantityText,
+  sortItemsByName,
+  unitsInside,
+} from '../core/item.model';
 import { ItemForm } from '../item-form/item-form';
 import { ItemPhoto } from '../item-photo/item-photo';
 import {
@@ -18,7 +25,8 @@ export type ItemRowControl =
   | 'put-back'
   | 'used'
   | 'add-photo'
-  | 'photo';
+  | 'photo'
+  | 'row';
 
 /** The row and the form the user asked for: take out, put back or used. */
 export interface ItemUnitsRequested {
@@ -103,9 +111,9 @@ export class ItemList {
       id: item.id,
       item,
       name: item.name,
-      quantity: item.quantity === 0 ? 'None left' : `Qty ${item.quantity}`,
+      quantity: itemQuantityText(item),
       // "20 of 100 out", also when all the units are out ("4 of 4 out"). Empty when none is out.
-      outLabel: item.quantityOut > 0 ? `${item.quantityOut} of ${item.quantity} out` : '',
+      outLabel: itemOutText(item),
       hasOut: item.quantityOut > 0,
       hasInside: unitsInside(item) > 0,
       // The photo to show, or null: no photo, or a photo that does not exist any more.
@@ -122,12 +130,24 @@ export class ItemList {
    * "Put back", "Used", "Add photo", "Edit", "Delete"), its thumbnail, or the "Cancel" button of
    * its delete confirmation. It does nothing if the row or the control
    * is not drawn. The panel calls it after a form or a confirmation closes, so the focus is not
-   * lost with the element that had it.
+   * lost with the element that had it. 'row' is the row itself: it takes the focus (and the
+   * browser scrolls it into view) when the user arrives from a search result.
    */
   focusControl(itemId: string, control: ItemRowControl): void {
     const row = Array.from(this.host.querySelectorAll<HTMLElement>('li.item')).find(
       (li) => li.dataset['itemId'] === itemId,
     );
-    row?.querySelector<HTMLElement>(`.item-${control}`)?.focus();
+    if (control === 'row') {
+      if (row) {
+        // A row cannot take the focus by itself. tabindex="-1" lets the code give it the focus
+        // without making it a stop of the Tab key. It is removed when the focus leaves, so a
+        // click on the text of a row does not focus the row.
+        row.tabIndex = -1;
+        row.addEventListener('blur', () => row.removeAttribute('tabindex'), { once: true });
+        row.focus();
+      }
+    } else {
+      row?.querySelector<HTMLElement>(`.item-${control}`)?.focus();
+    }
   }
 }

@@ -216,7 +216,33 @@ const NAME_COLLATOR = new Intl.Collator('en', { sensitivity: 'base', numeric: tr
  * the stored order (the order they were added in) does not change.
  */
 export function sortItemsByName(items: readonly Item[]): Item[] {
-  return [...items].sort((a, b) => NAME_COLLATOR.compare(a.name, b.name));
+  return [...items].sort((a, b) => compareItemNames(a.name, b.name));
+}
+
+/**
+ * Compares two item names the way the list orders them (see `sortItemsByName`): negative when
+ * `a` goes first, positive when `b` does, 0 when they are the same for the order. The search
+ * results use it too, so both lists order names in the same way.
+ */
+export function compareItemNames(a: string, b: string): number {
+  return NAME_COLLATOR.compare(a, b);
+}
+
+/** The automatic name number `n`: "Item 1", "Item 2"... The one place that knows its shape. */
+function defaultItemName(n: number): string {
+  return `Item ${n}`;
+}
+
+/**
+ * True when the name is an automatic name: exactly "Item N", where N is a positive whole number
+ * written without leading zeros, ignoring upper/lower case ("item 3" counts; "Item 03", "Item"
+ * and "My Item 3" do not). The items that keep such a name are the ones still "to complete".
+ */
+export function isDefaultItemName(name: string): boolean {
+  const n = Number(name.slice(defaultItemName(1).length - 1));
+  return (
+    Number.isSafeInteger(n) && n >= 1 && name.toLowerCase() === defaultItemName(n).toLowerCase()
+  );
 }
 
 /**
@@ -228,8 +254,21 @@ export function sortItemsByName(items: readonly Item[]): Item[] {
 export function nextItemName(items: readonly Pick<Item, 'name'>[]): string {
   const used = new Set(items.map((item) => item.name.toLowerCase()));
   let n = 1;
-  while (used.has(`item ${n}`)) {
+  while (used.has(defaultItemName(n).toLowerCase())) {
     n++;
   }
-  return `Item ${n}`;
+  return defaultItemName(n);
+}
+
+/** The quantity of an item as the lists show it: "Qty 3", or "None left" when it is 0. */
+export function itemQuantityText(item: Pick<Item, 'quantity'>): string {
+  return item.quantity === 0 ? 'None left' : `Qty ${item.quantity}`;
+}
+
+/**
+ * The units of an item that are out of its container, as the lists show them: "20 of 100 out",
+ * also when all the units are out ("4 of 4 out"). Empty when no unit is out.
+ */
+export function itemOutText(item: Pick<Item, 'quantity' | 'quantityOut'>): string {
+  return item.quantityOut > 0 ? `${item.quantityOut} of ${item.quantity} out` : '';
 }

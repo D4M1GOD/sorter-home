@@ -1,3 +1,4 @@
+import { Location } from '@angular/common';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { provideRouter } from '@angular/router';
@@ -911,6 +912,171 @@ describe('RoomDetail', () => {
       expect(store.getById(room.id)?.containers.some((c) => c.id === toys.id)).toBe(false);
       // Its category was only used by the deleted items, so it is no longer suggested.
       expect(store.categories()).toEqual([]);
+    });
+
+    describe('arriving from a search result', () => {
+      /**
+       * "Garage" with the stack "Bottom" (level 1), "Middle" (2) and "Top" (3), and the container
+       * "Far" alone. "Middle" has the items "Cable" and "Hammer"; "Far" has "Rope".
+       */
+      function fill() {
+        const store = TestBed.inject(RoomStore);
+        const room = createRoom('Garage');
+        store.add(room);
+        const bottom = createContainer(TOUGH_BOX_27_GAL.id, 'Bottom', 0, 0);
+        const middle = createContainer(TOUGH_BOX_27_GAL.id, 'Middle', 0, 0);
+        const top = createContainer(TOUGH_BOX_27_GAL.id, 'Top', 0, 0);
+        const far = createContainer(TOUGH_BOX_27_GAL.id, 'Far', 2000, 0);
+        store.addContainer(room.id, bottom);
+        store.addContainerOnStack(room.id, middle, bottom.id);
+        store.addContainerOnStack(room.id, top, bottom.id);
+        store.addContainer(room.id, far);
+        const make = (name: string) =>
+          createItem({ name, quantity: 1, description: '', category: '', photoId: null });
+        const cable = make('Cable');
+        const hammer = make('Hammer');
+        const rope = make('Rope');
+        store.addItem(room.id, middle.id, cable);
+        store.addItem(room.id, middle.id, hammer);
+        store.addItem(room.id, far.id, rope);
+        return { store, room, bottom, middle, top, far, cable, hammer, rope };
+      }
+
+      /** Opens the room page as a result link does, attached to the page so the focus can be checked. */
+      async function follow(roomId: string, query: string) {
+        const harness = await RouterTestingHarness.create();
+        const fixture = harness.fixture;
+        // In the page before the navigation: moving an element later would take its focus away.
+        document.body.appendChild(fixture.nativeElement);
+        await harness.navigateByUrl(`/rooms/${roomId}${query}`);
+        await fixture.whenStable();
+        fixture.detectChanges();
+        await fixture.whenStable();
+        return { fixture, element: fixture.nativeElement as HTMLElement };
+      }
+
+      afterEach(() => {
+        document.body.replaceChildren();
+      });
+
+      const address = () => TestBed.inject(Location).path();
+
+      function panelName(element: HTMLElement): string | undefined {
+        return (element.querySelector('#container-name') as HTMLInputElement | null)?.value;
+      }
+
+      function notice(element: HTMLElement): string | undefined {
+        return element.querySelector('.target-notice')?.textContent?.trim();
+      }
+
+      function rowOf(element: HTMLElement, name: string): HTMLElement {
+        return element.querySelector(`button[aria-label="Edit ${name}"]`)?.closest('.item') as HTMLElement;
+      }
+
+      it('has a link to the search of all the rooms, without filters', async () => {
+        const { room } = fill();
+        const { element } = await open(room.id);
+        const link = Array.from(element.querySelectorAll('a')).find(
+          (a) => a.textContent?.trim() === 'Search items',
+        );
+        expect(link?.getAttribute('href')).toBe('/search');
+      });
+
+      it('has an empty status line when the page is opened in the usual way', async () => {
+        const { room } = fill();
+        const { element } = await open(room.id);
+        expect(element.querySelector('.target-notice')?.getAttribute('role')).toBe('status');
+        expect(notice(element)).toBe('');
+        expect(element.querySelector('app-container-panel')).toBeNull();
+      });
+
+      it('selects the container and puts the focus on the row of the item', async () => {
+        const { room, far, rope } = fill();
+        const { element } = await follow(room.id, `?container=${far.id}&item=${rope.id}`);
+        expect(panelName(element)).toBe('Far');
+        expect(document.activeElement).toBe(rowOf(element, 'Rope'));
+        expect(notice(element)).toBe('');
+      });
+
+      it('focuses the row of that item, not the first row', async () => {
+        const { room, middle, hammer } = fill();
+        const { element } = await follow(room.id, `?container=${middle.id}&item=${hammer.id}`);
+        expect(document.activeElement).toBe(rowOf(element, 'Hammer'));
+        expect(document.activeElement).not.toBe(rowOf(element, 'Cable'));
+      });
+
+      it('selects a container in the middle of a stack: the panel shows it in its stack list', async () => {
+        const { room, middle, cable } = fill();
+        const { element } = await follow(room.id, `?container=${middle.id}&item=${cable.id}`);
+        expect(panelName(element)).toBe('Middle');
+        expect(element.querySelector('.level[aria-current="true"]')?.textContent).toContain('Middle');
+        expect(element.querySelector('.level[aria-current="true"]')?.textContent).toContain('Level 2');
+        // The plan draws the stack as one container, and it is the selected one.
+        expect(element.querySelectorAll('app-room-plan .container.selected').length).toBe(1);
+        expect(document.activeElement).toBe(rowOf(element, 'Cable'));
+      });
+
+      it('takes the two parameters out of the address once it has used them', async () => {
+        const { room, far, rope } = fill();
+        await follow(room.id, `?container=${far.id}&item=${rope.id}`);
+        expect(address()).toBe(`/rooms/${room.id}`);
+      });
+
+      it('selects the container without moving the focus when there is no item', async () => {
+        const { room, far } = fill();
+        const { element } = await follow(room.id, `?container=${far.id}`);
+        expect(panelName(element)).toBe('Far');
+        expect(document.activeElement?.closest('.item')).toBeNull();
+        expect(notice(element)).toBe('');
+        expect(address()).toBe(`/rooms/${room.id}`);
+      });
+
+      it('says that the container no longer exists, and selects nothing', async () => {
+        const { room, rope } = fill();
+        const { element } = await follow(room.id, `?container=deleted&item=${rope.id}`);
+        expect(element.querySelector('app-container-panel')).toBeNull();
+        expect(notice(element)).toBe('That container no longer exists.');
+        expect(address()).toBe(`/rooms/${room.id}`);
+      });
+
+      it('says that the item no longer exists, and still selects its container', async () => {
+        const { room, far } = fill();
+        const { element } = await follow(room.id, `?container=${far.id}&item=deleted`);
+        expect(panelName(element)).toBe('Far');
+        expect(notice(element)).toBe('That item no longer exists.');
+        expect(document.activeElement?.closest('.item')).toBeNull();
+      });
+
+      it('does not take an item of another container for the item of the result', async () => {
+        const { room, far, cable } = fill();
+        const { element } = await follow(room.id, `?container=${far.id}&item=${cable.id}`);
+        expect(panelName(element)).toBe('Far');
+        expect(notice(element)).toBe('That item no longer exists.');
+      });
+
+      it('clears the notice when the user selects a container', async () => {
+        const { room, far } = fill();
+        const { fixture, element } = await follow(room.id, '?container=deleted');
+        expect(notice(element)).toBe('That container no longer exists.');
+        const plan = fixture.debugElement.query(By.directive(RoomPlan)).componentInstance as RoomPlan;
+        plan.selectedId.set(far.id);
+        await fixture.whenStable();
+        fixture.detectChanges();
+        expect(notice(element)).toBe('');
+      });
+
+      it('still shows "Room not found" for a room that no longer exists', async () => {
+        fill();
+        const { element } = await follow('deleted-room', '?container=a&item=b');
+        expect(element.querySelector('h1')?.textContent).toContain('Room not found');
+      });
+
+      it('ignores the item parameter without a container', async () => {
+        const { room, rope } = fill();
+        const { element } = await follow(room.id, `?item=${rope.id}`);
+        expect(element.querySelector('app-container-panel')).toBeNull();
+        expect(notice(element)).toBe('');
+      });
     });
 
     describe('adding several photos', () => {

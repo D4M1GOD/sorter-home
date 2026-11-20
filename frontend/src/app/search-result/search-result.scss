@@ -1,0 +1,79 @@
+:host {
+  display: block;
+}
+
+// The thumbnail (when there is one) on the left and the text taking the rest.
+.result {
+  display: flex;
+  gap: 0.75rem;
+  align-items: flex-start;
+}
+
+.result-text {
+  flex: 1;
+  min-width: 0;
+}
+
+// The name on the left and the quantity on the right. A long name wraps and the quantity stays whole.
+.result-head {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  justify-content: space-between;
+}
+
+// The link is at least 44 px tall, so it is easy to press with a finger.
+.result-link {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  min-height: 2.75rem;
+  color: #1f4fbf;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.result-link:focus-visible {
+  outline: 3px solid #1f4fbf;
+  outline-offset: 2px;
+}
+
+.result-quantity {
+  flex: none;
+}
+
+// "20 of 100 out": bold text inside a box, as in the item list. It does not rely on color.
+.result-out {
+  padding: 0.125rem 0.5rem;
+  border: 1px solid #1f2937;
+  border-radius: 0.25rem;
+  font-size: 0.875rem;
+  font-weight: 700;
+}
+
+.result-detail,
+.result-location {
+  margin: 0.25rem 0 0;
+  color: #4b5563;
+  font-size: 0.875rem;
+  overflow-wrap: anywhere;
+}
+
+// Keeps the line breaks the user typed in the description.
+.result-description {
+  white-space: pre-line;
+}
+
+.result-location {
+  color: #1f2937;
+}
+
+// In the page for screen readers, but not drawn.
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}

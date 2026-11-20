@@ -15,5 +15,10 @@ export const routes: Routes = [
     path: 'rooms',
     loadComponent: () => import('./pages/room-list/room-list').then((m) => m.RoomList),
   },
+  // The search of every query (/search?q=cable&room=...) is in the query parameters.
+  {
+    path: 'search',
+    loadComponent: () => import('./pages/search/search').then((m) => m.Search),
+  },
   { path: '**', redirectTo: '' },
 ];
