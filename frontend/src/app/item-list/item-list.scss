@@ -18,6 +18,12 @@
   border-top: 1px solid #e5e7eb;
 }
 
+// The row that was given the focus (the item of a search result): the same ring as the buttons.
+.item:focus {
+  outline: 3px solid #1f4fbf;
+  outline-offset: 2px;
+}
+
 // The thumbnail (when there is one) on the left and the text of the row taking the rest.
 .item-main {
   display: flex;

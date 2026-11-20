@@ -494,6 +494,14 @@ export class ContainerPanel {
     this.focusAfterRender(() => this.itemList()?.focusControl(item.id, control));
   }
 
+  /**
+   * Puts the keyboard focus on the row of an item, which scrolls it into view. The room page
+   * calls it when the user arrives from a search result. It does nothing if the row is not drawn.
+   */
+  focusItemRow(itemId: string): void {
+    this.itemList()?.focusControl(itemId, 'row');
+  }
+
   /** Runs `focus` once the page is drawn again, when the element to focus exists. */
   private focusAfterRender(focus: () => void): void {
     afterNextRender(focus, { injector: this.injector });

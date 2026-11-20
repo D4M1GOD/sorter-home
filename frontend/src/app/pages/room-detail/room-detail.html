@@ -1,6 +1,9 @@
 @if (room(); as room) {
   <h1>{{ room.name }}</h1>
 
+  <!-- The search looks in all the rooms, not only in this one. -->
+  <p class="room-links"><a routerLink="/search">Search items</a></p>
+
   <form (submit)="onRename($event)" novalidate>
     <label for="rename-room">Rename room</label>
     <input
@@ -22,6 +25,10 @@
       }
     </div>
   </form>
+
+  <!-- What happened to the container or the item of a search result that is gone. Always in
+       the page, empty when there is nothing to say, so screen readers announce changes. -->
+  <p class="target-notice" role="status">{{ targetNotice() }}</p>
 
   <!-- Plan on the left and the container panel on the right (below the plan on narrow screens). -->
   <div class="workspace">

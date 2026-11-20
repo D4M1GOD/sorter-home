@@ -2,6 +2,7 @@
  * Categories are free text and there is no separate list of them: the categories in use are the
  * ones of the existing items, in every room. This file has the rules to compare and reuse them.
  */
+import { textKey } from './text-key';
 
 /** A list of rooms, reduced to what is needed to read the categories of their items. */
 type RoomsWithItems = readonly {
@@ -16,11 +17,10 @@ export function cleanCategory(text: string): string {
 /**
  * The text used to compare two categories. It ignores upper/lower case, accents (diacritics)
  * and repeated spaces, so "Jardín", "jardin" and " JARDIN " are the same category.
- * `normalize('NFD')` splits a letter with an accent into the letter and the accent mark, and
- * `\p{M}` matches those marks, so they can be removed.
+ * The normalization itself is `textKey`, which the search shares.
  */
 export function categoryKey(text: string): string {
-  return cleanCategory(text).normalize('NFD').replace(/\p{M}/gu, '').toLowerCase();
+  return textKey(text);
 }
 
 /**

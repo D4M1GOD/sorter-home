@@ -10,6 +10,7 @@ import { RouterLink } from '@angular/router';
     <p class="actions">
       <a class="button button--primary" routerLink="/rooms/new">Create Room</a>
       <a class="button" routerLink="/rooms">Explore Rooms</a>
+      <a class="button" routerLink="/search">Search items</a>
     </p>
   `,
 })

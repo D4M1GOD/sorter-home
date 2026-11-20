@@ -8,6 +8,26 @@
   transform: translateX(-50%);
 }
 
+// The link is at least 44 px tall, so it is easy to press with a finger.
+.room-links {
+  margin: 0 0 0.5rem;
+}
+
+.room-links a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.75rem;
+}
+
+// Takes no room while it is empty.
+.target-notice {
+  margin: 0;
+}
+
+.target-notice:not(:empty) {
+  margin-bottom: 0.75rem;
+}
+
 .side-empty {
   // On narrow screens the panel goes below the plan, so the hint is only shown beside it.
   display: none;

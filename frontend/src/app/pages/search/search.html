@@ -1,0 +1,89 @@
+<h1>Search items</h1>
+
+<!-- There is no search button: the list follows what is typed. Enter does nothing. -->
+<form class="search-form" role="search" novalidate (submit)="$event.preventDefault()">
+  <div class="field field--text">
+    <label for="search-text">Search items</label>
+    <input
+      #textField
+      id="search-text"
+      type="search"
+      autocomplete="off"
+      [value]="query().text"
+      (input)="onText($event)"
+      (blur)="onTextBlur()"
+    />
+  </div>
+
+  <div class="field">
+    <label for="search-category">Category</label>
+    <select id="search-category" (change)="onCategory($event)">
+      <option [value]="anyCategory" [selected]="categoryValue() === anyCategory">Any category</option>
+      <option [value]="noCategory" [selected]="categoryValue() === noCategory">No category</option>
+      @for (category of categories(); track category) {
+        <option
+          [value]="categoryPrefix + category"
+          [selected]="categoryValue() === categoryPrefix + category"
+        >
+          {{ category }}
+        </option>
+      }
+    </select>
+  </div>
+
+  <div class="field">
+    <label for="search-room">Room</label>
+    <select id="search-room" (change)="onRoom($event)">
+      <option value="" [selected]="query().roomId === null">All rooms</option>
+      @for (room of rooms(); track room.id) {
+        <option [value]="room.id" [selected]="query().roomId === room.id">{{ room.name }}</option>
+      }
+    </select>
+  </div>
+
+  <label class="check" for="search-out">
+    <input id="search-out" type="checkbox" [checked]="query().out" (change)="onOut($event)" />
+    Out of the container
+  </label>
+
+  <label class="check" for="search-todo">
+    <input
+      id="search-todo"
+      type="checkbox"
+      [checked]="query().toComplete"
+      (change)="onToComplete($event)"
+    />
+    To complete
+  </label>
+
+  <button class="button search-clear" type="button" (click)="clear()">Clear</button>
+</form>
+
+<!-- Always in the page, empty when there is nothing to say, so screen readers announce changes. -->
+<p class="search-status" role="status">{{ status() }}</p>
+
+@if (empty()) {
+  <p class="search-hint">Type to search or choose a filter.</p>
+} @else if (results().length === 0) {
+  <p class="search-hint">No items match. Try other words or change the filters.</p>
+} @else {
+  <ul class="results">
+    @for (result of visible(); track result.item.id) {
+      <li [attr.data-item-id]="result.item.id">
+        <app-search-result [result]="result" (photoOpened)="openPhoto(result)" />
+      </li>
+    }
+  </ul>
+  @if (hasMore()) {
+    <button class="button search-more" type="button" (click)="showMore()">Show more</button>
+  }
+}
+
+@if (viewed(); as viewed) {
+  <!-- The full photo, in a window over the page. It is here only while it is open. -->
+  <app-photo-viewer
+    [photoId]="viewed.item.photoId!"
+    [name]="viewed.item.name"
+    (closed)="closePhoto()"
+  />
+}

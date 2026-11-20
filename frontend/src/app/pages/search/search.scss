@@ -1,0 +1,89 @@
+// Phone: every control in its own line, as wide as the page. Wide screens: see the end.
+.search-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: flex-end;
+}
+
+.field {
+  flex: 1 1 100%;
+  min-width: 0;
+}
+
+// The same look as the text fields of the other pages, and at least 44 px tall for a finger.
+input[type='search'],
+select {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 2.75rem;
+  padding: 0.5rem;
+  border: 1px solid #1f2937;
+  border-radius: 0.25rem;
+  background: #fff;
+  color: #1f2937;
+  font: inherit;
+}
+
+// The label and its box are one touch target of at least 44 px. (The global style makes labels
+// blocks with a margin below: undo both here.)
+.check {
+  display: flex;
+  flex: 1 1 100%;
+  gap: 0.5rem;
+  align-items: center;
+  min-height: 2.75rem;
+  margin-bottom: 0;
+}
+
+.check input {
+  width: 1.25rem;
+  height: 1.25rem;
+  margin: 0;
+}
+
+.search-clear {
+  min-height: 2.75rem;
+}
+
+.search-status {
+  min-height: 1.5rem;
+  margin: 1rem 0 0;
+  font-weight: 700;
+}
+
+.search-hint {
+  margin: 0.5rem 0 0;
+  color: #4b5563;
+}
+
+.results {
+  margin: 0.5rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.results > li {
+  padding: 0.75rem 0;
+  border-top: 1px solid #e5e7eb;
+}
+
+.search-more {
+  min-height: 2.75rem;
+  margin-top: 0.5rem;
+}
+
+// Wide screens: the text field in its own line, and the filters side by side below it.
+@media (min-width: 40rem) {
+  .field {
+    flex: 1 1 12rem;
+  }
+
+  .field--text {
+    flex-basis: 100%;
+  }
+
+  .check {
+    flex: 0 0 auto;
+  }
+}

@@ -1,5 +1,9 @@
 import {
+  compareItemNames,
   createItem,
+  isDefaultItemName,
+  itemOutText,
+  itemQuantityText,
   isValidItemCategory,
   isValidItemDescription,
   isValidItemDraft,
@@ -371,6 +375,86 @@ describe('item model', () => {
         const items = named('Item 2', 'Item 02', 'Item 2');
         expect(sortItemsByName(items).map((item) => item.id)).toEqual(['id-0', 'id-1', 'id-2']);
       });
+    });
+  });
+
+  describe('compareItemNames', () => {
+    it('orders names like the item list: natural numbers, ignoring upper/lower case', () => {
+      expect(compareItemNames('Item 2', 'Item 10')).toBeLessThan(0);
+      expect(compareItemNames('Item 10', 'Item 2')).toBeGreaterThan(0);
+      expect(compareItemNames('nails', 'NAILS')).toBe(0);
+      expect(compareItemNames('Hammer', 'nails')).toBeLessThan(0);
+    });
+
+    it('is the comparison sortItemsByName uses', () => {
+      const names = ['Item 10', 'nails', 'Item 2', 'Hammer'];
+      const items = names.map((name, index) => ({ ...draft, id: `id-${index}`, name, quantityOut: 0 }));
+      expect(sortItemsByName(items).map((item) => item.name)).toEqual(
+        [...names].sort(compareItemNames),
+      );
+    });
+  });
+
+  describe('isDefaultItemName', () => {
+    it('is true for "Item N" with a positive whole number', () => {
+      for (const name of ['Item 1', 'Item 2', 'Item 10', 'Item 9999']) {
+        expect(isDefaultItemName(name)).toBe(true);
+      }
+    });
+
+    it('ignores upper/lower case', () => {
+      expect(isDefaultItemName('item 3')).toBe(true);
+      expect(isDefaultItemName('ITEM 3')).toBe(true);
+    });
+
+    it('is false for anything else', () => {
+      for (const name of [
+        'Item',
+        'Item ',
+        'Item 0',
+        'Item -1',
+        'Item 01',
+        'Item 1.5',
+        'Item 1e3',
+        'Item  1',
+        'Item 1 ',
+        ' Item 1',
+        'Item 1a',
+        'Item one',
+        'My Item 1',
+        'Items 1',
+        'Nails',
+        '',
+      ]) {
+        expect(isDefaultItemName(name)).toBe(false);
+      }
+    });
+
+    it('agrees with nextItemName: every name it gives is a default name, and it counts them as used', () => {
+      const items: { name: string }[] = [];
+      for (let i = 0; i < 12; i++) {
+        const name = nextItemName(items);
+        expect(isDefaultItemName(name)).toBe(true);
+        items.push({ name });
+      }
+      expect(items.at(-1)?.name).toBe('Item 12');
+    });
+  });
+
+  describe('quantity texts', () => {
+    const amounts = (quantity: number, quantityOut: number) => ({ quantity, quantityOut });
+
+    it('itemQuantityText says "Qty N", or "None left" for 0', () => {
+      expect(itemQuantityText(amounts(3, 0))).toBe('Qty 3');
+      expect(itemQuantityText(amounts(100, 20))).toBe('Qty 100');
+      expect(itemQuantityText(amounts(0, 0))).toBe('None left');
+    });
+
+    it('itemOutText says "N of M out" when units are out, and nothing when none is', () => {
+      expect(itemOutText(amounts(100, 20))).toBe('20 of 100 out');
+      expect(itemOutText(amounts(4, 4))).toBe('4 of 4 out');
+      expect(itemOutText(amounts(100, 0))).toBe('');
+      expect(itemOutText(amounts(0, 0))).toBe('');
     });
   });
 
