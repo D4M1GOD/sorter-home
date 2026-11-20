@@ -1,4 +1,4 @@
-# SorterHome — Requirements (v0.17)
+# SorterHome — Requirements (v0.18)
 
 Last updated: 2026-11-20
 Status: Requirements for v1 are agreed. Items marked **Open** still need a decision from the project owner.
@@ -173,12 +173,19 @@ localStorage holds about 5 MB in total and one phone photo weighs 2 to 5 MB, so 
 |---|---|---|
 | Frontend | Angular + TypeScript | Confirmed |
 | Backend | C# with ASP.NET Core Web API on .NET 10 | Confirmed |
-| Database | PostgreSQL | Proposed |
-| Local services | Docker Desktop (PostgreSQL and the Azure Storage emulator) | Proposed |
-| Photos | Azure Blob Storage | Proposed |
-| Hosting | Azure | Proposed |
-| Code and CI | GitHub + GitHub Actions | Proposed |
+| Database | PostgreSQL | Confirmed |
+| Data access | Entity Framework Core | Confirmed |
+| Local services | Docker Desktop (PostgreSQL and the Azure Storage emulator) | Confirmed |
+| Photos | Azure Blob Storage | Confirmed |
+| Hosting | Azure | Confirmed |
+| Code and CI | GitHub + GitHub Actions | Confirmed |
 | Drawing the room plan | **SVG** inside Angular templates, with pointer events written by hand (no drawing library) | Confirmed |
+
+### Backend decisions
+- Everything is built and tested locally first (steps 5.1 to 5.6), then CI (5.7), then the deploy to Azure (5.8).
+- The backend is one program with three projects plus a test project: `Api` (controllers), `Domain` (pure rules, no dependencies) and `Infrastructure` (database and photos). Inside each project the code is organized in folders by feature (`Rooms`, `Containers`, `Items`), so a new feature is a new folder.
+- The server validates the essential rules, which live in `Domain`: text limits, quantity from 0 to 9999, units out not higher than the quantity, lengths in whole millimeters, and a container inside its room. The geometry rules (overlaps, stacks, rotation) stay in the frontend until the optional step 5.9. The frontend keeps them in any case, to draw the shadow while dragging.
+- Two decisions are still open: **Open (step 5.2):** how the data records who owns it, to prepare for user accounts and shared households, and **Open (step 5.8):** how the API is protected while there are no accounts.
 
 ## 11. Rendering decision
 The room plan is drawn with SVG. Reasons: the plan has tens of objects (not thousands), SVG elements bind directly to Angular data, and the SVG `viewBox` can use **millimeters**, the same unit as the stored data. Drag, resize, snap and rotate are implemented with pointer events. Data and drawing stay separate (a plain model in mm; SVG components only render it), so a library could replace the drawing layer later without changing the model.
@@ -217,7 +224,16 @@ The room plan is drawn with SVG. Reasons: the plan has tens of objects (not thou
    - 3.4 Photo (IndexedDB, reduced in size before saving, "Add photo" prompt) — **done**
    - 3.5 Several photos at once, one item per photo — **done**
 4. Search and filters — **done**
-5. Deploy to the internet with CI
+5. Backend and deploy to the internet with CI:
+   - 5.1 Backend skeleton in `backend/` (ASP.NET Core on .NET 10) with a health endpoint, and its test project
+   - 5.2 PostgreSQL in Docker, tables and migrations (Entity Framework Core)
+   - 5.3 API for rooms
+   - 5.4 API for containers and items
+   - 5.5 Photos in Azure Blob Storage (with a local emulator)
+   - 5.6 The frontend uses the API instead of `RoomStore` and `PhotoStore`
+   - 5.7 CI with GitHub Actions (frontend and backend)
+   - 5.8 Deploy to Azure
+   - 5.9 (optional, after the deploy) The container geometry rules (overlaps, stacks, rotation) also in the server
 6. QR labels
 7. User accounts and shared households
 8. Offline mode
