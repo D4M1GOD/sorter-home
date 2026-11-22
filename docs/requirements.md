@@ -1,4 +1,4 @@
-# SorterHome — Requirements (v0.19)
+# SorterHome — Requirements (v0.20)
 
 Last updated: 2026-11-20
 Status: Requirements for v1 are agreed. Items marked **Open** still need a decision from the project owner.
@@ -173,7 +173,7 @@ localStorage holds about 5 MB in total and one phone photo weighs 2 to 5 MB, so 
 |---|---|---|
 | Frontend | Angular + TypeScript | Confirmed |
 | Backend | C# with ASP.NET Core Web API on .NET 10 | Confirmed |
-| Database | PostgreSQL | Confirmed |
+| Database | PostgreSQL 18 | Confirmed |
 | Data access | Entity Framework Core | Confirmed |
 | Local services | Docker Desktop (PostgreSQL and the Azure Storage emulator) | Confirmed |
 | Photos | Azure Blob Storage | Confirmed |
@@ -186,7 +186,10 @@ localStorage holds about 5 MB in total and one phone photo weighs 2 to 5 MB, so 
 - The backend is one program with three projects plus a test project: `Api` (controllers), `Domain` (pure rules, no dependencies) and `Infrastructure` (database and photos). Inside each project the code is organized in folders by feature (`Rooms`, `Containers`, `Items`), so a new feature is a new folder.
 - The projects are `SorterHome.Api`, `SorterHome.Domain`, `SorterHome.Infrastructure` and `SorterHome.Tests`, in the solution `backend/SorterHome.slnx`. Domain depends on nothing, Infrastructure depends on Domain, and Api depends on both. The endpoints are controllers (not Minimal API). The tests use xUnit v3 and test the endpoints with `WebApplicationFactory` (the whole API in memory). The API documentation is only the OpenAPI document that .NET generates, at `/openapi/v1.json`, only in the Development environment, with no graphic interface. `GET /api/health` answers 200 with `{"status":"Healthy"}` (or `"Degraded"`) and 503 with `{"status":"Unhealthy"}`; from step 5.2 it also checks the database.
 - The server validates the essential rules, which live in `Domain`: text limits, quantity from 0 to 9999, units out not higher than the quantity, lengths in whole millimeters, and a container inside its room. The geometry rules (overlaps, stacks, rotation) stay in the frontend until the optional step 5.9. The frontend keeps them in any case, to draw the shadow while dragging.
-- Two decisions are still open: **Open (step 5.2):** how the data records who owns it, to prepare for user accounts and shared households, and **Open (step 5.8):** how the API is protected while there are no accounts.
+- Ownership (decided in step 5.2): the table `rooms` has a `household_id` column (uuid) with a fixed value kept in the code (`FixedHousehold`), with no households table and no foreign key yet. Containers and items belong to the household of their room. Every query of rooms, containers and items is limited to the current household from the start. When households exist, a migration creates the households table, inserts one row with that same fixed id and adds the foreign key, so the existing rows do not change.
+- Database (step 5.2): the tables `rooms`, `containers` and `items`, with plural snake_case names; the ids are uuid version 7 created by the application. The foreign keys from containers to rooms and from items to containers delete in cascade. The database checks the rules of a single row: names not blank, text lengths (60, 500, 40 and 40 for the container type), room width and depth between 1219 and 30480 mm, container position and stack position not negative, rotation 0 or 90, quantity from 0 to 9999 and units out from 0 to the quantity. The stored order of the items is a `position` column, unique in each container. `description` and `category` are empty text, never null. `photo_id` is a nullable uuid with no foreign key until step 5.5. There are no date columns. The local database is PostgreSQL 18 in Docker Compose (`backend/docker-compose.yml`: a named volume, a healthcheck, port 5432 only on the local machine). The password is not in the repository: the API reads the connection string from User Secrets in development, and Docker reads the password from `backend/.env` (ignored by git; `backend/.env.example` is the model). The migrations are created with Entity Framework Core and applied by hand in development; how they are applied in production is decided in step 5.8. The tests use a throwaway PostgreSQL started by Testcontainers. `GET /api/health` also checks the database: 503 with `{"status":"Unhealthy"}` when it cannot be reached.
+- **Open (step 5.6):** what happens with the rooms, containers and items that exist today in the browser's localStorage when the frontend starts using the API (import them once, or start empty).
+- **Open (step 5.8):** how the API is protected while there are no accounts.
 
 ## 11. Rendering decision
 The room plan is drawn with SVG. Reasons: the plan has tens of objects (not thousands), SVG elements bind directly to Angular data, and the SVG `viewBox` can use **millimeters**, the same unit as the stored data. Drag, resize, snap and rotate are implemented with pointer events. Data and drawing stay separate (a plain model in mm; SVG components only render it), so a library could replace the drawing layer later without changing the model.
@@ -227,7 +230,7 @@ The room plan is drawn with SVG. Reasons: the plan has tens of objects (not thou
 4. Search and filters — **done**
 5. Backend and deploy to the internet with CI:
    - 5.1 Backend skeleton in `backend/` (ASP.NET Core on .NET 10) with a health endpoint, and its test project — **done**
-   - 5.2 PostgreSQL in Docker, tables and migrations (Entity Framework Core)
+   - 5.2 PostgreSQL in Docker, tables and migrations (Entity Framework Core) — **done**
    - 5.3 API for rooms
    - 5.4 API for containers and items
    - 5.5 Photos in Azure Blob Storage (with a local emulator)
