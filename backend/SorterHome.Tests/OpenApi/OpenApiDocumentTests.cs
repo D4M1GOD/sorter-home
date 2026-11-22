@@ -27,6 +27,19 @@ public sealed class OpenApiDocumentTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task Describes_the_rooms_endpoints_in_development()
+    {
+        var client = factory.WithWebHostBuilder(builder => builder.UseEnvironment("Development"))
+            .CreateClient();
+
+        var document = await client.GetStringAsync("/openapi/v1.json", TestContext.Current.CancellationToken);
+
+        Assert.Contains("\"/api/rooms\"", document);
+        Assert.Contains("\"/api/rooms/{id}\"", document);
+        Assert.Contains("\"RoomResponse\"", document);
+    }
+
+    [Fact]
     public async Task Does_not_exist_in_production()
     {
         var client = factory.WithWebHostBuilder(builder => builder.UseEnvironment("Production"))

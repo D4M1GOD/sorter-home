@@ -1,6 +1,6 @@
-# SorterHome — Requirements (v0.20)
+# SorterHome — Requirements (v0.21)
 
-Last updated: 2026-11-20
+Last updated: 2026-11-22
 Status: Requirements for v1 are agreed. Items marked **Open** still need a decision from the project owner.
 
 ## 1. Purpose
@@ -188,6 +188,7 @@ localStorage holds about 5 MB in total and one phone photo weighs 2 to 5 MB, so 
 - The server validates the essential rules, which live in `Domain`: text limits, quantity from 0 to 9999, units out not higher than the quantity, lengths in whole millimeters, and a container inside its room. The geometry rules (overlaps, stacks, rotation) stay in the frontend until the optional step 5.9. The frontend keeps them in any case, to draw the shadow while dragging.
 - Ownership (decided in step 5.2): the table `rooms` has a `household_id` column (uuid) with a fixed value kept in the code (`FixedHousehold`), with no households table and no foreign key yet. Containers and items belong to the household of their room. Every query of rooms, containers and items is limited to the current household from the start. When households exist, a migration creates the households table, inserts one row with that same fixed id and adds the foreign key, so the existing rows do not change.
 - Database (step 5.2): the tables `rooms`, `containers` and `items`, with plural snake_case names; the ids are uuid version 7 created by the application. The foreign keys from containers to rooms and from items to containers delete in cascade. The database checks the rules of a single row: names not blank, text lengths (60, 500, 40 and 40 for the container type), room width and depth between 1219 and 30480 mm, container position and stack position not negative, rotation 0 or 90, quantity from 0 to 9999 and units out from 0 to the quantity. The stored order of the items is a `position` column, unique in each container. `description` and `category` are empty text, never null. `photo_id` is a nullable uuid with no foreign key until step 5.5. There are no date columns. The local database is PostgreSQL 18 in Docker Compose (`backend/docker-compose.yml`: a named volume, a healthcheck, port 5432 only on the local machine). The password is not in the repository: the API reads the connection string from User Secrets in development, and Docker reads the password from `backend/.env` (ignored by git; `backend/.env.example` is the model). The migrations are created with Entity Framework Core and applied by hand in development; how they are applied in production is decided in step 5.8. The tests use a throwaway PostgreSQL started by Testcontainers. `GET /api/health` also checks the database: 503 with `{"status":"Unhealthy"}` when it cannot be reached.
+- API (step 5.3): the rooms of the current household are served by `GET /api/rooms` (in creation order, by id), `GET /api/rooms/{id}`, `POST /api/rooms`, `PUT /api/rooms/{id}` and `DELETE /api/rooms/{id}`. POST takes only the name and creates the room with the default size of FR-1b, a rule that lives in Domain. PUT always takes the three fields `name`, `widthMm` and `depthMm`, and answers 200 with the saved room. A room is returned as `id`, `name`, `widthMm`, `depthMm`, `containerCount` and `itemCount`; the counts are numbers of rows computed by the database, and `household_id` is never exposed. The rules live in Domain: the name is trimmed, required and at most 60 characters; the width and the depth are whole millimeters from 1219 to 30480 (the rule of FR-4c about the containers comes with step 5.4). A broken rule gives 400 with a `ValidationProblemDetails` body (RFC 9457) with the errors by field and stable English messages; the frontend decides its own texts. POST answers 201 with a `Location` header, DELETE answers 204 (the database deletes the containers and items in cascade), and an id that does not exist or belongs to another household answers 404. There is no pagination, no versioning and no ETag.
 - **Open (step 5.6):** what happens with the rooms, containers and items that exist today in the browser's localStorage when the frontend starts using the API (import them once, or start empty).
 - **Open (step 5.8):** how the API is protected while there are no accounts.
 
@@ -231,7 +232,7 @@ The room plan is drawn with SVG. Reasons: the plan has tens of objects (not thou
 5. Backend and deploy to the internet with CI:
    - 5.1 Backend skeleton in `backend/` (ASP.NET Core on .NET 10) with a health endpoint, and its test project — **done**
    - 5.2 PostgreSQL in Docker, tables and migrations (Entity Framework Core) — **done**
-   - 5.3 API for rooms
+   - 5.3 API for rooms — **done**
    - 5.4 API for containers and items
    - 5.5 Photos in Azure Blob Storage (with a local emulator)
    - 5.6 The frontend uses the API instead of `RoomStore` and `PhotoStore`

@@ -20,6 +20,31 @@ every project (net10.0, nullable, implicit usings, warnings as errors) are in
 - Nullable reference types are on: fix a possible null, never hide it with `!`.
 - Asynchronous methods receive a `CancellationToken` and pass it on.
 
+## API
+- Routes under `api/` in a controller of the feature folder. DTOs are `record` types in Api,
+  one per file (`<Action><Entity>Request`, `<Entity>Response`); entities and `household_id` are
+  never exposed.
+- Rules live in Domain and return `ValidationError`s (`Result<T>` when creating, a list when
+  updating); they never throw for invalid input and change nothing when they fail. No
+  DataAnnotations on DTOs; DTO fields are nullable so a missing field gets its Domain message.
+- The API changes entities only through their Domain methods (`Create` and `Update`). The setters
+  are public only for EF Core and the database tests.
+- Domain errors become a 400 `ValidationProblemDetails` (RFC 9457) with
+  `this.ValidationProblem(errors)` (`Api/Validation`); the keys are the JSON names in camelCase.
+  JSON that cannot be read gets ASP.NET's own 400, with the JSON path as key (`$.widthMm`) and a
+  generic message. Numbers must be JSON numbers (strict number handling); unknown fields are
+  ignored.
+- Status codes: 200 when reading and for PUT (with the saved resource), 201 with `Location` for
+  POST, 204 with no body for DELETE, 400 for validation, 404 for an id that does not exist or
+  belongs to another household, 415 for a body that is not JSON. A `DbUpdateConcurrencyException`
+  while saving (the row was deleted meanwhile) is a 404.
+- Controllers use `SorterHomeDbContext` directly while they stay thin; move the logic to a
+  service only when it grows.
+- Counts are computed by the database in the same query (a projection), never by loading rows.
+- Every action declares its `ProducesResponseType`s, so the OpenAPI document is accurate.
+- When the database is down, the data endpoints answer a generic 500 while `/api/health`
+  answers 503 (a nicer 503 for the data endpoints is not in scope).
+
 ## Database
 - PostgreSQL 18 through Entity Framework Core 10 (Npgsql). The local database runs in Docker
   Compose (`docker-compose.yml`, service `db`).
@@ -69,4 +94,7 @@ every project (net10.0, nullable, implicit usings, warnings as errors) are in
   API the connection string of the tests; never the plain `WebApplicationFactory<Program>`.
 - Database tests run against a real PostgreSQL started by Testcontainers (`PostgresServer`), one
   database per test class. Docker Desktop must be running; the tests fail if it is not.
+- One test class per endpoint, in the folder of its feature (`Rooms/GetRoomsTests.cs`, ...).
+  `SorterHomeApiFactory.ForHousehold(id)` gives a test its own household, so a list is exact.
+- Domain rules get plain unit tests, with no database and no API (`Rooms/RoomTests.cs`).
 - Pass `TestContext.Current.CancellationToken` to every call that accepts a token.
