@@ -1,13 +1,17 @@
 using System.Net;
 using Microsoft.AspNetCore.Hosting;
-using Microsoft.AspNetCore.Mvc.Testing;
+using SorterHome.Tests.Api;
 
 namespace SorterHome.Tests.OpenApi;
 
 /// <summary>The OpenAPI document that .NET generates exists only in Development.</summary>
-public sealed class OpenApiDocumentTests(WebApplicationFactory<Program> factory)
-    : IClassFixture<WebApplicationFactory<Program>>
+public sealed class OpenApiDocumentTests : IAsyncDisposable
 {
+    // The document never touches the database, but the API needs a connection string to start.
+    private readonly SorterHomeApiFactory factory = new(SorterHomeApiFactory.Unused);
+
+    public ValueTask DisposeAsync() => factory.DisposeAsync();
+
     [Fact]
     public async Task Describes_the_health_endpoint_in_development()
     {

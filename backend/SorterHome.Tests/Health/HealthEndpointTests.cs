@@ -1,20 +1,29 @@
 using System.Net;
-using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
+using SorterHome.Tests.Api;
+using SorterHome.Tests.Database;
 
 namespace SorterHome.Tests.Health;
 
 /// <summary>
-/// GET /api/health, through the whole API running in memory (no port, no network).
+/// GET /api/health, through the whole API running in memory (no port, no network), connected to
+/// the PostgreSQL of the tests.
 /// </summary>
-public sealed class HealthEndpointTests(WebApplicationFactory<Program> factory)
-    : IClassFixture<WebApplicationFactory<Program>>
+public sealed class HealthEndpointTests(PostgresServer server) : IAsyncLifetime
 {
+    private SorterHomeApiFactory factory = null!;
+
+    public async ValueTask InitializeAsync() =>
+        factory = new SorterHomeApiFactory(await server.MigratedDatabaseAsync("health"));
+
+    public ValueTask DisposeAsync() => factory.DisposeAsync();
+
     [Fact]
     public async Task Answers_healthy_when_every_check_passes()
     {
+        // The database check passes only because the API uses the database of the factory.
         var client = factory.CreateClient();
 
         var response = await client.GetAsync("/api/health", TestContext.Current.CancellationToken);
@@ -24,6 +33,24 @@ public sealed class HealthEndpointTests(WebApplicationFactory<Program> factory)
         Assert.True(response.Headers.CacheControl?.NoStore);
         Assert.Equal(
             """{"status":"Healthy"}""",
+            await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task Answers_503_unhealthy_when_the_database_cannot_be_reached()
+    {
+        // Nothing listens on port 1: the connection is refused at once.
+        await using var unreachable = new SorterHomeApiFactory(
+            "Host=127.0.0.1;Port=1;Database=sorterhome;Username=sorterhome;Password=unused;Timeout=2");
+        var client = unreachable.CreateClient();
+
+        var response = await client.GetAsync("/api/health", TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
+        Assert.True(response.Headers.CacheControl?.NoStore);
+        // Only the status: no error message, host or port.
+        Assert.Equal(
+            """{"status":"Unhealthy"}""",
             await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
     }
 

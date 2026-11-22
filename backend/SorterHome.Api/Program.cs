@@ -1,3 +1,6 @@
+using SorterHome.Infrastructure;
+using SorterHome.Infrastructure.Database;
+
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
@@ -5,8 +8,11 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddControllers();
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
 builder.Services.AddOpenApi();
-// The checks behind GET /api/health. None yet: the database adds its own in step 5.2.
-builder.Services.AddHealthChecks();
+// The database. In development the connection string comes from User Secrets.
+builder.Services.AddInfrastructure(
+    builder.Configuration.GetConnectionString(InfrastructureServices.ConnectionStringName));
+// The checks behind GET /api/health: the API answers only if it can connect to the database.
+builder.Services.AddHealthChecks().AddDbContextCheck<SorterHomeDbContext>("database");
 
 var app = builder.Build();
 

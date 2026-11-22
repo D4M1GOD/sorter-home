@@ -2,8 +2,19 @@
 
   <!-- The web API: controllers, and the place where every service is registered. -->
 
+  <PropertyGroup>
+    <!-- Only the name of the folder of the User Secrets (outside the repository). No secret here. -->
+    <UserSecretsId>b53c6add-8704-48df-9ebb-7ee57567d05f</UserSecretsId>
+  </PropertyGroup>
+
   <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.15" />
+    <!-- Needed by the dotnet-ef tool; it is not published with the API. -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.15">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="Microsoft.Extensions.Diagnostics.HealthChecks.EntityFrameworkCore" Version="10.0.15" />
   </ItemGroup>
 
   <ItemGroup>

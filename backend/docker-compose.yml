@@ -1,0 +1,28 @@
+# Local services for development. Start: docker compose up -d   Stop: docker compose stop
+name: sorterhome
+
+services:
+  db:
+    # Keep the same tag as PostgresServer.Image in SorterHome.Tests (the tests use it too).
+    image: postgres:18
+    environment:
+      POSTGRES_USER: sorterhome
+      POSTGRES_DB: sorterhome
+      # Read from backend/.env (ignored by git; copy .env.example). Compose stops with this
+      # message if it is missing. It is only used when the volume is created for the first time.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in backend/.env (copy .env.example)}
+    ports:
+      # Only this computer can connect, not the rest of the home network.
+      - "127.0.0.1:5432:5432"
+    volumes:
+      # PostgreSQL 18 images keep their data under /var/lib/postgresql (not .../data).
+      - db-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sorterhome -d sorterhome"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+volumes:
+  db-data:
