@@ -38,7 +38,8 @@ Full requirements: @docs/requirements.md (read it before starting any task).
 - Frontend: Angular + TypeScript, in `frontend/`
 - Backend: C# ASP.NET Core Web API on .NET 10, in `backend/`: solution `SorterHome.slnx` with
   `SorterHome.Api`, `SorterHome.Domain`, `SorterHome.Infrastructure` and `SorterHome.Tests`
-- Database: PostgreSQL (planned). Photos: Azure Blob Storage (planned).
+- Database: PostgreSQL 18 (Docker in development), through Entity Framework Core 10.
+  Photos: Azure Blob Storage (planned).
 - CI: GitHub Actions (planned)
 
 ## Conventions
@@ -63,7 +64,15 @@ Frontend (run from `frontend/`):
 - `ng build`: production build
 
 Backend (run from `backend/`):
+- `docker compose up -d`: start the local database (the first time, copy `.env.example` to
+  `.env` and choose the password)
+- `docker compose ps`: the database must show `healthy`
+- `docker compose stop`: stop the database (the data stays). Never `docker compose down -v`: it
+  deletes the volume with the data
+- `dotnet tool restore`: install the local tools (`dotnet-ef`)
+- `dotnet ef database update --project SorterHome.Infrastructure --startup-project SorterHome.Api`:
+  apply the migrations
 - `dotnet build`: build all the projects
-- `dotnet test`: run the backend tests (xUnit)
+- `dotnet test`: run the backend tests (xUnit); needs Docker Desktop running (Testcontainers)
 - `dotnet run --project SorterHome.Api`: development server at http://localhost:5080; health at
   `/api/health`, OpenAPI document at `/openapi/v1.json` (Development only)
