@@ -39,9 +39,4 @@ internal sealed class TestDatabase : IAsyncDisposable
         await scope.DisposeAsync();
         await provider.DisposeAsync();
     }
-
-    private sealed class TestHousehold(Guid id) : ICurrentHousehold
-    {
-        public Guid Id => id;
-    }
 }
